@@ -4,6 +4,7 @@ import { Plus, Search, Settings as SettingsIcon, Wallet, X } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { CardTile } from '@/features/cards/CardTile'
 import { cn } from '@/lib/utils'
+import { AddMenu } from './AddMenu'
 
 type Filter = 'all' | 'loyalty' | 'event' | 'upcoming'
 
@@ -19,6 +20,7 @@ export function Dashboard() {
   const loading = useCardsStore((s) => s.loading)
   const [filter, setFilter] = useState<Filter>('all')
   const [search, setSearch] = useState('')
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
 
   const filtered = useMemo(() => {
     let result = cards
@@ -160,14 +162,17 @@ export function Dashboard() {
         )}
       </main>
 
-      <Link
-        to="/add"
+      <button
+        type="button"
+        onClick={() => setAddMenuOpen(true)}
         aria-label="Ajouter une carte"
         style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
         className="fixed right-6 flex h-14 w-14 items-center justify-center rounded-full bg-walleo-yellow text-walleo-black shadow-2xl shadow-walleo-yellow/30 transition active:scale-95"
       >
         <Plus className="h-7 w-7" strokeWidth={2.5} />
-      </Link>
+      </button>
+
+      <AddMenu open={addMenuOpen} onClose={() => setAddMenuOpen(false)} />
     </div>
   )
 }

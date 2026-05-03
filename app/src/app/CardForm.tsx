@@ -6,7 +6,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   Crop,
@@ -78,8 +78,19 @@ function makeEmptyTicket(): Ticket {
   return { id: nanoid(), barcodeFormat: 'QR', barcodeValue: '' }
 }
 
+interface InitialBarcodeState {
+  initialBarcode?: {
+    format: BarcodeFormat
+    value: string
+    source?: CardSource
+  }
+}
+
 export function CardForm({ mode }: CardFormProps) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const initialBarcode = (location.state as InitialBarcodeState | null)
+    ?.initialBarcode
   const params = useParams<{ id: string }>()
   const editingId = mode === 'edit' ? params.id : undefined
   const existing = useCardsStore((s) =>
@@ -90,15 +101,28 @@ export function CardForm({ mode }: CardFormProps) {
   const loading = useCardsStore((s) => s.loading)
 
   const initialTickets = useMemo<Ticket[]>(() => {
-    if (!existing) return []
-    if (existing.tickets && existing.tickets.length > 0) return existing.tickets
-    if (existing.type === 'event' && existing.barcodeValue) {
+    if (existing) {
+      if (existing.tickets && existing.tickets.length > 0)
+        return existing.tickets
+      if (existing.type === 'event' && existing.barcodeValue) {
+        return [
+          {
+            id: nanoid(),
+            barcodeFormat: existing.barcodeFormat,
+            barcodeValue: existing.barcodeValue,
+            seat: existing.seat,
+          },
+        ]
+      }
+      return []
+    }
+    // New card from scanner — pre-seed a ticket so event mode works too
+    if (initialBarcode) {
       return [
         {
           id: nanoid(),
-          barcodeFormat: existing.barcodeFormat,
-          barcodeValue: existing.barcodeValue,
-          seat: existing.seat,
+          barcodeFormat: initialBarcode.format,
+          barcodeValue: initialBarcode.value,
         },
       ]
     }
@@ -113,9 +137,11 @@ export function CardForm({ mode }: CardFormProps) {
   )
   // Loyalty-only barcode fields
   const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>(
-    existing?.barcodeFormat ?? 'QR',
+    existing?.barcodeFormat ?? initialBarcode?.format ?? 'QR',
   )
-  const [barcodeValue, setBarcodeValue] = useState(existing?.barcodeValue ?? '')
+  const [barcodeValue, setBarcodeValue] = useState(
+    existing?.barcodeValue ?? initialBarcode?.value ?? '',
+  )
   const [memberNumber, setMemberNumber] = useState(existing?.memberNumber ?? '')
   // Event fields
   const [eventDate, setEventDate] = useState(
@@ -126,9 +152,13 @@ export function CardForm({ mode }: CardFormProps) {
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets)
 
   const [submitting, setSubmitting] = useState(false)
-  const [importStatus, setImportStatus] = useState<ImportStatus>({ kind: 'idle' })
+  const [importStatus, setImportStatus] = useState<ImportStatus>(
+    initialBarcode
+      ? { kind: 'success', message: `Code détecté (${initialBarcode.format}).` }
+      : { kind: 'idle' },
+  )
   const [importSource, setImportSource] = useState<CardSource>(
-    existing?.source ?? 'manual',
+    existing?.source ?? initialBarcode?.source ?? 'manual',
   )
   const [cropSource, setCropSource] = useState<{
     file: File | Blob
