@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" width="720" height="200">
+  <!-- Wordmark Walleo : icône + texte -->
+  <defs>
+    <linearGradient id="cardGrad2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE65A"/>
+      <stop offset="100%" stop-color="#FFD60A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icône à gauche -->
+  <g transform="translate(20 20)">
+    <rect width="160" height="160" rx="36" fill="#0A0A0A"/>
+
+    <!-- Carte arrière -->
+    <g transform="translate(80 80) rotate(-8) translate(-35 -42)">
+      <rect width="70" height="84" rx="10" fill="#FFD60A" opacity="0.35"/>
+    </g>
+
+    <!-- Carte avant + W -->
+    <g transform="translate(80 80) rotate(6) translate(-35 -42)">
+      <rect width="70" height="84" rx="10" fill="url(#cardGrad2)"/>
+      <path d="M 16 28 L 26 64 L 35 42 L 45 64 L 54 28"
+            fill="none"
+            stroke="#0A0A0A"
+            stroke-width="7"
+            stroke-linecap="round"
+            stroke-linejoin="round"/>
+    </g>
+  </g>
+
+  <!-- Texte Walleo -->
+  <text x="210" y="130"
+        font-family="-apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif"
+        font-size="120"
+        font-weight="700"
+        letter-spacing="-4"
+        fill="#0A0A0A">Walleo</text>
+</svg>

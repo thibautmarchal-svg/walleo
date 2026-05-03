@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- App icon : carré arrondi noir + W formé de deux cartes -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A1A1A"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFE65A"/>
+      <stop offset="100%" stop-color="#FFD60A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fond -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+
+  <!-- Carte arrière (rotation -8°) -->
+  <g transform="translate(256 256) rotate(-8) translate(-110 -130)">
+    <rect x="0" y="0" width="220" height="260" rx="28" fill="#FFD60A" opacity="0.35"/>
+  </g>
+
+  <!-- Carte avant (rotation +6°) avec W découpé -->
+  <g transform="translate(256 256) rotate(6) translate(-110 -130)">
+    <rect x="0" y="0" width="220" height="260" rx="28" fill="url(#cardGrad)"/>
+    <!-- W stylisé sur la carte -->
+    <path d="M 50 90 L 80 200 L 110 130 L 140 200 L 170 90"
+          fill="none"
+          stroke="#0A0A0A"
+          stroke-width="22"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+</svg>
