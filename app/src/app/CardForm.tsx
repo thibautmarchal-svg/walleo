@@ -5,11 +5,16 @@ import {
   type FormEvent,
   type ReactNode,
 } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, ImagePlus, Loader2 } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { decodeImageBarcode } from '@/features/screenshot-import/decode'
-import type { BarcodeFormat, CardSource, CardType } from '@/shared/db/types'
+import type {
+  BarcodeFormat,
+  Card,
+  CardSource,
+  CardType,
+} from '@/shared/db/types'
 
 const BARCODE_FORMATS: BarcodeFormat[] = [
   'QR',
@@ -37,25 +42,75 @@ type ImportStatus =
   | { kind: 'success'; format: BarcodeFormat }
   | { kind: 'error'; message: string }
 
-export function AddCard() {
+interface CardFormProps {
+  mode: 'add' | 'edit'
+}
+
+function isoToLocalDatetime(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number): string => n.toString().padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`
+}
+
+export function CardForm({ mode }: CardFormProps) {
   const navigate = useNavigate()
+  const params = useParams<{ id: string }>()
+  const editingId = mode === 'edit' ? params.id : undefined
+  const existing = useCardsStore((s) =>
+    editingId ? s.cards.find((c) => c.id === editingId) : undefined,
+  )
   const add = useCardsStore((s) => s.add)
-  const [type, setType] = useState<CardType>('loyalty')
-  const [name, setName] = useState('')
-  const [brandColor, setBrandColor] = useState(PRESET_COLORS[0]!)
-  const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>('QR')
-  const [barcodeValue, setBarcodeValue] = useState('')
-  const [memberNumber, setMemberNumber] = useState('')
-  const [eventDate, setEventDate] = useState('')
-  const [venue, setVenue] = useState('')
-  const [seat, setSeat] = useState('')
-  const [organizer, setOrganizer] = useState('')
+  const update = useCardsStore((s) => s.update)
+  const loading = useCardsStore((s) => s.loading)
+
+  const [type, setType] = useState<CardType>(existing?.type ?? 'loyalty')
+  const [name, setName] = useState(existing?.name ?? '')
+  const [brandColor, setBrandColor] = useState(
+    existing?.brandColor ?? PRESET_COLORS[0]!,
+  )
+  const [barcodeFormat, setBarcodeFormat] = useState<BarcodeFormat>(
+    existing?.barcodeFormat ?? 'QR',
+  )
+  const [barcodeValue, setBarcodeValue] = useState(existing?.barcodeValue ?? '')
+  const [memberNumber, setMemberNumber] = useState(existing?.memberNumber ?? '')
+  const [eventDate, setEventDate] = useState(
+    existing?.eventDate ? isoToLocalDatetime(existing.eventDate) : '',
+  )
+  const [venue, setVenue] = useState(existing?.venue ?? '')
+  const [seat, setSeat] = useState(existing?.seat ?? '')
+  const [organizer, setOrganizer] = useState(existing?.organizer ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [importStatus, setImportStatus] = useState<ImportStatus>({ kind: 'idle' })
-  const [importSource, setImportSource] = useState<CardSource>('manual')
+  const [importSource, setImportSource] = useState<CardSource>(
+    existing?.source ?? 'manual',
+  )
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleImageFile = async (file: File, fromPaste: boolean): Promise<void> => {
+  // Re-hydrate fields if the card finally loads after the store finishes loadAll()
+  useEffect(() => {
+    if (mode !== 'edit' || !existing) return
+    setType(existing.type)
+    setName(existing.name)
+    setBrandColor(existing.brandColor)
+    setBarcodeFormat(existing.barcodeFormat)
+    setBarcodeValue(existing.barcodeValue)
+    setMemberNumber(existing.memberNumber ?? '')
+    setEventDate(
+      existing.eventDate ? isoToLocalDatetime(existing.eventDate) : '',
+    )
+    setVenue(existing.venue ?? '')
+    setSeat(existing.seat ?? '')
+    setOrganizer(existing.organizer ?? '')
+    setImportSource(existing.source)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, existing?.id])
+
+  const handleImageFile = async (
+    file: File,
+    fromPaste: boolean,
+  ): Promise<void> => {
     setImportStatus({ kind: 'loading' })
     try {
       const result = await decodeImageBarcode(file)
@@ -70,7 +125,6 @@ export function AddCard() {
     }
   }
 
-  // Coller un screenshot directement (Cmd+V / Ctrl+V) — capture les images du presse-papier
   useEffect(() => {
     const onPaste = (e: ClipboardEvent): void => {
       const items = e.clipboardData?.items
@@ -101,28 +155,46 @@ export function AddCard() {
     if (submitting) return
     setSubmitting(true)
     try {
-      const card = await add({
+      const payload = {
         type,
         name: name.trim(),
         brandColor,
         barcodeFormat,
         barcodeValue: barcodeValue.trim(),
-        ...(type === 'loyalty' && memberNumber.trim()
-          ? { memberNumber: memberNumber.trim() }
-          : {}),
-        ...(type === 'event'
-          ? {
-              ...(eventDate
-                ? { eventDate: new Date(eventDate).toISOString() }
-                : {}),
-              ...(venue.trim() ? { venue: venue.trim() } : {}),
-              ...(seat.trim() ? { seat: seat.trim() } : {}),
-              ...(organizer.trim() ? { organizer: organizer.trim() } : {}),
-            }
-          : {}),
         source: importSource,
-      })
-      navigate(`/card/${card.id}`, { replace: true })
+        memberNumber:
+          type === 'loyalty' && memberNumber.trim()
+            ? memberNumber.trim()
+            : undefined,
+        eventDate:
+          type === 'event' && eventDate
+            ? new Date(eventDate).toISOString()
+            : undefined,
+        venue: type === 'event' && venue.trim() ? venue.trim() : undefined,
+        seat: type === 'event' && seat.trim() ? seat.trim() : undefined,
+        organizer:
+          type === 'event' && organizer.trim() ? organizer.trim() : undefined,
+      } satisfies Partial<Card>
+
+      if (mode === 'edit' && editingId) {
+        await update(editingId, payload)
+        navigate(`/card/${editingId}`, { replace: true })
+      } else {
+        const card = await add({
+          type: payload.type,
+          name: payload.name,
+          brandColor: payload.brandColor,
+          barcodeFormat: payload.barcodeFormat,
+          barcodeValue: payload.barcodeValue,
+          source: payload.source,
+          ...(payload.memberNumber ? { memberNumber: payload.memberNumber } : {}),
+          ...(payload.eventDate ? { eventDate: payload.eventDate } : {}),
+          ...(payload.venue ? { venue: payload.venue } : {}),
+          ...(payload.seat ? { seat: payload.seat } : {}),
+          ...(payload.organizer ? { organizer: payload.organizer } : {}),
+        })
+        navigate(`/card/${card.id}`, { replace: true })
+      }
     } finally {
       setSubmitting(false)
     }
@@ -131,6 +203,21 @@ export function AddCard() {
   const canSubmit =
     name.trim().length > 0 &&
     (barcodeFormat === 'NONE' || barcodeValue.trim().length > 0)
+
+  if (mode === 'edit' && !loading && !existing) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+        <p className="text-sm text-muted-foreground">Carte introuvable.</p>
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          className="rounded-full bg-secondary px-4 py-2 text-sm"
+        >
+          Retour au dashboard
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-full bg-background">
@@ -143,17 +230,16 @@ export function AddCard() {
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <h1 className="text-base font-semibold">Nouvelle carte</h1>
+        <h1 className="text-base font-semibold">
+          {mode === 'edit' ? 'Modifier la carte' : 'Nouvelle carte'}
+        </h1>
       </header>
 
       <form
         onSubmit={onSubmit}
         className="space-y-5 px-5 py-6"
-        style={{
-          paddingBottom: 'calc(7rem + env(safe-area-inset-bottom))',
-        }}
+        style={{ paddingBottom: 'calc(7rem + env(safe-area-inset-bottom))' }}
       >
-        {/* Import screenshot / photo */}
         <div className="rounded-2xl border border-dashed border-border bg-secondary/40 p-4">
           <div className="flex items-start gap-3">
             <div className="rounded-full bg-walleo-yellow/15 p-2 text-walleo-yellow">
@@ -328,7 +414,11 @@ export function AddCard() {
           style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
           className="fixed left-5 right-5 flex h-12 items-center justify-center rounded-full bg-walleo-yellow text-base font-semibold text-walleo-black shadow-2xl shadow-walleo-yellow/30 transition active:scale-95 disabled:opacity-40"
         >
-          {submitting ? 'Enregistrement…' : 'Enregistrer la carte'}
+          {submitting
+            ? 'Enregistrement…'
+            : mode === 'edit'
+              ? 'Enregistrer les modifications'
+              : 'Enregistrer la carte'}
         </button>
       </form>
     </div>

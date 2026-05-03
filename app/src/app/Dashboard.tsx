@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Wallet, X } from 'lucide-react'
+import { Plus, Search, Settings as SettingsIcon, Wallet, X } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { CardTile } from '@/features/cards/CardTile'
 import { cn } from '@/lib/utils'
@@ -67,9 +67,18 @@ export function Dashboard() {
             <Wallet className="h-6 w-6 text-walleo-yellow" />
             <h1 className="text-xl font-bold tracking-tight">Walleo</h1>
           </div>
-          <span className="text-xs text-muted-foreground">
-            {cards.length} {cards.length > 1 ? 'cartes' : 'carte'}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              {cards.length} {cards.length > 1 ? 'cartes' : 'carte'}
+            </span>
+            <Link
+              to="/settings"
+              aria-label="Paramètres"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-secondary-foreground transition active:scale-95"
+            >
+              <SettingsIcon className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
 
         <div className="relative mt-4">

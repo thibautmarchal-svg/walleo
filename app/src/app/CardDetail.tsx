@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Trash2, Wallet as WalletIcon } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Wallet as WalletIcon } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { Barcode } from '@/features/barcode-display/Barcode'
 import { useWakeLock } from '@/lib/hooks/useWakeLock'
@@ -66,14 +66,24 @@ export function CardDetail() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="truncate px-3 text-base font-semibold">{card.name}</h1>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label="Supprimer"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-destructive active:scale-95"
-        >
-          <Trash2 className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigate(`/card/${card.id}/edit`)}
+            aria-label="Modifier"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-walleo-black active:scale-95"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            aria-label="Supprimer"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-destructive active:scale-95"
+          >
+            <Trash2 className="h-5 w-5" />
+          </button>
+        </div>
       </header>
 
       <main className="flex flex-1 flex-col items-center justify-start gap-6 px-5 py-8">
