@@ -119,9 +119,11 @@ export function CardForm({ mode }: CardFormProps) {
       setImportSource(fromPaste ? 'screenshot' : 'photo-ocr')
       setImportStatus({ kind: 'success', format: result.format })
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Aucun code-barres détecté.'
-      setImportStatus({ kind: 'error', message })
+      const reason = err instanceof Error ? err.message : 'Aucun code détecté'
+      setImportStatus({
+        kind: 'error',
+        message: `${reason}. Recadre l'image sur le code-barres uniquement, ou saisis-le manuellement.`,
+      })
     }
   }
 
