@@ -6,9 +6,13 @@ import {
   type ReactNode,
 } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ImagePlus, Loader2 } from 'lucide-react'
+import { ArrowLeft, Crop, ImagePlus, Loader2 } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
-import { decodeImageBarcode } from '@/features/screenshot-import/decode'
+import {
+  cropImageRegion,
+  decodeImageBarcode,
+} from '@/features/screenshot-import/decode'
+import { ImageCropper } from '@/features/screenshot-import/ImageCropper'
 import type {
   BarcodeFormat,
   Card,
@@ -86,7 +90,18 @@ export function CardForm({ mode }: CardFormProps) {
   const [importSource, setImportSource] = useState<CardSource>(
     existing?.source ?? 'manual',
   )
+  const [cropSource, setCropSource] = useState<{
+    file: File | Blob
+    objectUrl: string
+  } | null>(null)
+  const [cropperOpen, setCropperOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    return () => {
+      if (cropSource) URL.revokeObjectURL(cropSource.objectUrl)
+    }
+  }, [cropSource])
 
   // Re-hydrate fields if the card finally loads after the store finishes loadAll()
   useEffect(() => {
@@ -107,24 +122,66 @@ export function CardForm({ mode }: CardFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, existing?.id])
 
+  const tryDecode = async (
+    blob: File | Blob,
+    source: CardSource,
+  ): Promise<boolean> => {
+    setImportStatus({ kind: 'loading' })
+    try {
+      const result = await decodeImageBarcode(blob)
+      setBarcodeFormat(result.format)
+      setBarcodeValue(result.value)
+      setImportSource(source)
+      setImportStatus({ kind: 'success', format: result.format })
+      return true
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Aucun code détecté'
+      setImportStatus({ kind: 'error', message: reason })
+      return false
+    }
+  }
+
   const handleImageFile = async (
     file: File,
     fromPaste: boolean,
   ): Promise<void> => {
-    setImportStatus({ kind: 'loading' })
-    try {
-      const result = await decodeImageBarcode(file)
-      setBarcodeFormat(result.format)
-      setBarcodeValue(result.value)
-      setImportSource(fromPaste ? 'screenshot' : 'photo-ocr')
-      setImportStatus({ kind: 'success', format: result.format })
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : 'Aucun code détecté'
-      setImportStatus({
-        kind: 'error',
-        message: `${reason}. Recadre l'image sur le code-barres uniquement, ou saisis-le manuellement.`,
+    const source: CardSource = fromPaste ? 'screenshot' : 'photo-ocr'
+    const ok = await tryDecode(file, source)
+    if (!ok) {
+      // Keep the image around so the user can manually crop & retry.
+      const objectUrl = URL.createObjectURL(file)
+      setCropSource((prev) => {
+        if (prev) URL.revokeObjectURL(prev.objectUrl)
+        return { file, objectUrl }
       })
     }
+  }
+
+  const handleCropConfirm = async (region: {
+    x: number
+    y: number
+    width: number
+    height: number
+  }): Promise<void> => {
+    if (!cropSource) return
+    try {
+      const cropped = await cropImageRegion(cropSource.file, region)
+      const ok = await tryDecode(cropped, importSource)
+      if (ok) {
+        setCropperOpen(false)
+        URL.revokeObjectURL(cropSource.objectUrl)
+        setCropSource(null)
+      }
+    } catch (err) {
+      setImportStatus({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Échec du recadrage.',
+      })
+    }
+  }
+
+  const handleCropCancel = (): void => {
+    setCropperOpen(false)
   }
 
   useEffect(() => {
@@ -222,7 +279,15 @@ export function CardForm({ mode }: CardFormProps) {
   }
 
   return (
-    <div className="min-h-full bg-background">
+    <>
+      {cropperOpen && cropSource && (
+        <ImageCropper
+          imageUrl={cropSource.objectUrl}
+          onCancel={handleCropCancel}
+          onConfirm={handleCropConfirm}
+        />
+      )}
+      <div className="min-h-full bg-background">
       <header className="safe-top sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-background/80 px-4 py-3 backdrop-blur-md">
         <button
           type="button"
@@ -282,9 +347,21 @@ export function CardForm({ mode }: CardFormProps) {
                 </p>
               )}
               {importStatus.kind === 'error' && (
-                <p className="mt-2 text-xs text-destructive">
-                  {importStatus.message}
-                </p>
+                <div className="mt-2 space-y-2">
+                  <p className="text-xs text-destructive">
+                    {importStatus.message}
+                  </p>
+                  {cropSource && (
+                    <button
+                      type="button"
+                      onClick={() => setCropperOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-medium transition active:scale-95"
+                    >
+                      <Crop className="h-3.5 w-3.5" />
+                      Recadrer manuellement
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -423,7 +500,8 @@ export function CardForm({ mode }: CardFormProps) {
               : 'Enregistrer la carte'}
         </button>
       </form>
-    </div>
+      </div>
+    </>
   )
 }
 
