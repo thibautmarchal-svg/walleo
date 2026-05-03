@@ -23,6 +23,10 @@ import {
   decodeImageBarcode,
 } from '@/features/screenshot-import/decode'
 import { ImageCropper } from '@/features/screenshot-import/ImageCropper'
+import {
+  createOcrSession,
+  type ExtractedTicketInfo,
+} from '@/features/ocr/extractTicketInfo'
 import type {
   BarcodeFormat,
   CardSource,
@@ -53,7 +57,8 @@ const PRESET_COLORS = [
 type ImportStatus =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'batch'; current: number; total: number }
+  | { kind: 'batch-decode'; current: number; total: number }
+  | { kind: 'batch-ocr'; current: number; total: number }
   | { kind: 'success'; message: string }
   | { kind: 'error'; message: string }
 
@@ -197,34 +202,109 @@ export function CardForm({ mode }: CardFormProps) {
 
   const handleTicketFiles = async (files: File[]): Promise<void> => {
     if (files.length === 0) return
-    const added: Ticket[] = []
+
+    // Phase 1: barcode decode (fast)
+    const decoded: Array<{ file: File; ticket: Ticket }> = []
     const failed: File[] = []
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       if (!file) continue
-      setImportStatus({ kind: 'batch', current: i + 1, total: files.length })
+      setImportStatus({
+        kind: 'batch-decode',
+        current: i + 1,
+        total: files.length,
+      })
       try {
         const result = await decodeImageBarcode(file)
-        added.push({
-          id: nanoid(),
-          barcodeFormat: result.format,
-          barcodeValue: result.value,
+        decoded.push({
+          file,
+          ticket: {
+            id: nanoid(),
+            barcodeFormat: result.format,
+            barcodeValue: result.value,
+          },
         })
       } catch {
         failed.push(file)
       }
     }
-    if (added.length > 0) {
-      setTickets((prev) => [...prev, ...added])
+
+    // Append the new tickets immediately so the user sees them.
+    if (decoded.length > 0) {
+      setTickets((prev) => [...prev, ...decoded.map((d) => d.ticket)])
       setImportSource('screenshot')
     }
+
+    // Phase 2: OCR — extract holder/seat per ticket + global event metadata.
+    // Sequential single worker to keep memory low on iPhone.
+    const ocrResults: ExtractedTicketInfo[] = []
+    if (decoded.length > 0) {
+      let session: Awaited<ReturnType<typeof createOcrSession>> | null = null
+      try {
+        session = await createOcrSession()
+        for (let i = 0; i < decoded.length; i++) {
+          const item = decoded[i]
+          if (!item) continue
+          setImportStatus({
+            kind: 'batch-ocr',
+            current: i + 1,
+            total: decoded.length,
+          })
+          try {
+            const info = await session.recognize(item.file)
+            ocrResults.push(info)
+            // Patch this ticket with per-ticket OCR results
+            const patch: Partial<Ticket> = {}
+            if (info.holderName) patch.holderName = info.holderName
+            if (info.seat) patch.seat = info.seat
+            if (Object.keys(patch).length > 0) {
+              setTickets((prev) =>
+                prev.map((t) =>
+                  t.id === item.ticket.id ? { ...t, ...patch } : t,
+                ),
+              )
+            }
+          } catch {
+            // OCR failure on one image — skip silently, keep the ticket.
+          }
+        }
+      } catch {
+        // Tesseract failed to initialize entirely — skip OCR
+      } finally {
+        await session?.terminate().catch(() => {})
+      }
+
+      // Apply event-wide metadata from the first OCR result that has it.
+      // Never overwrite values the user already typed.
+      const globalInfo = ocrResults.find(
+        (r) => r.eventName || r.eventDate || r.venue || r.organizer,
+      )
+      if (globalInfo) {
+        if (globalInfo.eventName && !name) setName(globalInfo.eventName)
+        if (globalInfo.eventDate && !eventDate) setEventDate(globalInfo.eventDate)
+        if (globalInfo.venue && !venue) setVenue(globalInfo.venue)
+        if (globalInfo.organizer && !organizer)
+          setOrganizer(globalInfo.organizer)
+      }
+    }
+
+    // Final status
+    const enriched = ocrResults.filter(
+      (r) => r.holderName || r.seat || r.eventName,
+    ).length
+
     if (failed.length === 0) {
+      const detail =
+        enriched > 0
+          ? ` (infos détectées sur ${enriched})`
+          : ''
       setImportStatus({
         kind: 'success',
-        message: `${added.length} billet${added.length > 1 ? 's' : ''} ajouté${added.length > 1 ? 's' : ''}.`,
+        message: `${decoded.length} billet${decoded.length > 1 ? 's' : ''} ajouté${decoded.length > 1 ? 's' : ''}${detail}.`,
       })
       return
     }
+
     // Queue the FIRST failed image into the cropper so the user can fix it
     const lastFailed = failed[0]
     if (lastFailed) {
@@ -237,8 +317,8 @@ export function CardForm({ mode }: CardFormProps) {
     setImportStatus({
       kind: 'error',
       message:
-        added.length > 0
-          ? `${added.length} ajouté${added.length > 1 ? 's' : ''}, ${failed.length} non reconnu${failed.length > 1 ? 's' : ''}. Recadre le premier.`
+        decoded.length > 0
+          ? `${decoded.length} ajouté${decoded.length > 1 ? 's' : ''}, ${failed.length} non reconnu${failed.length > 1 ? 's' : ''}. Recadre le premier.`
           : `${failed.length} photo${failed.length > 1 ? 's' : ''} sans code reconnu. Recadre la première.`,
     })
   }
@@ -707,7 +787,11 @@ function ImportSection({
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={status.kind === 'loading' || status.kind === 'batch'}
+            disabled={
+              status.kind === 'loading' ||
+              status.kind === 'batch-decode' ||
+              status.kind === 'batch-ocr'
+            }
             className="mt-3 inline-flex items-center gap-2 rounded-full bg-walleo-yellow px-4 py-2 text-xs font-semibold text-walleo-black transition active:scale-95 disabled:opacity-50"
           >
             {status.kind === 'loading' && (
@@ -716,15 +800,23 @@ function ImportSection({
                 Détection…
               </>
             )}
-            {status.kind === 'batch' && (
+            {status.kind === 'batch-decode' && (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {status.current} / {status.total}…
+                Code-barres {status.current}/{status.total}…
               </>
             )}
-            {status.kind !== 'loading' && status.kind !== 'batch' && (
-              <>{multiple ? 'Choisir des images' : 'Choisir une image'}</>
+            {status.kind === 'batch-ocr' && (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Lecture texte {status.current}/{status.total}…
+              </>
             )}
+            {status.kind !== 'loading' &&
+              status.kind !== 'batch-decode' &&
+              status.kind !== 'batch-ocr' && (
+                <>{multiple ? 'Choisir des images' : 'Choisir une image'}</>
+              )}
           </button>
           <input
             ref={inputRef}
