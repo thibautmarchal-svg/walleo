@@ -41,6 +41,11 @@ export function Dashboard() {
     const q = search.trim().toLowerCase()
     if (q) {
       result = result.filter((c) => {
+        const ticketStrings = c.tickets
+          ? c.tickets
+              .flatMap((t) => [t.holderName, t.seat, t.barcodeValue])
+              .filter(Boolean)
+          : []
         const haystack = [
           c.name,
           c.memberNumber,
@@ -48,6 +53,7 @@ export function Dashboard() {
           c.seat,
           c.organizer,
           c.barcodeValue,
+          ...ticketStrings,
         ]
           .filter(Boolean)
           .join(' ')

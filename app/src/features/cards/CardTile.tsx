@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Calendar, Tag } from 'lucide-react'
+import { Calendar, Tag, Users } from 'lucide-react'
 import type { Card } from '@/shared/db/types'
 
 interface CardTileProps {
@@ -8,6 +8,7 @@ interface CardTileProps {
 
 export function CardTile({ card }: CardTileProps) {
   const isEvent = card.type === 'event'
+  const ticketCount = isEvent && card.tickets ? card.tickets.length : 0
   const subtitle = isEvent
     ? card.venue ?? card.organizer ?? 'Événement'
     : card.memberNumber ?? 'Carte de fidélité'
@@ -43,11 +44,19 @@ export function CardTile({ card }: CardTileProps) {
               </span>
             )}
           </div>
-          {dateLabel && (
-            <div className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm">
-              {dateLabel}
-            </div>
-          )}
+          <div className="flex items-center gap-1.5">
+            {ticketCount > 1 && (
+              <div className="flex items-center gap-1 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm">
+                <Users className="h-3 w-3" />
+                {ticketCount} places
+              </div>
+            )}
+            {dateLabel && (
+              <div className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold backdrop-blur-sm">
+                {dateLabel}
+              </div>
+            )}
+          </div>
         </div>
         <div className="space-y-1">
           <h3 className="text-lg font-semibold leading-tight tracking-tight line-clamp-2">

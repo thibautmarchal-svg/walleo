@@ -1,10 +1,21 @@
 import { db } from './db'
-import type { Card } from './types'
+import type { Card, Ticket } from './types'
 
-const BACKUP_VERSION = 1
+const BACKUP_VERSION = 2
 
-interface SerializedCard extends Omit<Card, 'originalPkpassBlob'> {
-  originalPkpassBlob?: { dataUrl: string; type: string }
+interface SerializedPkpass {
+  dataUrl: string
+  type: string
+}
+
+interface SerializedTicket extends Omit<Ticket, 'originalPkpassBlob'> {
+  originalPkpassBlob?: SerializedPkpass
+}
+
+interface SerializedCard
+  extends Omit<Card, 'originalPkpassBlob' | 'tickets'> {
+  originalPkpassBlob?: SerializedPkpass
+  tickets?: SerializedTicket[]
 }
 
 export interface BackupFile {
@@ -16,25 +27,37 @@ export interface BackupFile {
 
 export async function exportBackup(): Promise<BackupFile> {
   const cards = await db.cards.toArray()
-  const serialized = await Promise.all(
-    cards.map(async (c): Promise<SerializedCard> => {
-      const { originalPkpassBlob, ...rest } = c
-      if (!originalPkpassBlob) return rest
-      const dataUrl = await blobToDataUrl(originalPkpassBlob)
-      return {
-        ...rest,
-        originalPkpassBlob: {
-          dataUrl,
-          type: originalPkpassBlob.type || 'application/vnd.apple.pkpass',
-        },
-      }
-    }),
-  )
+  const serialized = await Promise.all(cards.map(serializeCard))
   return {
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     app: 'walleo',
     cards: serialized,
+  }
+}
+
+async function serializeCard(c: Card): Promise<SerializedCard> {
+  const { originalPkpassBlob, tickets, ...rest } = c
+  const out: SerializedCard = { ...rest }
+  if (originalPkpassBlob) {
+    out.originalPkpassBlob = await serializeBlob(originalPkpassBlob)
+  }
+  if (tickets) {
+    out.tickets = await Promise.all(tickets.map(serializeTicket))
+  }
+  return out
+}
+
+async function serializeTicket(t: Ticket): Promise<SerializedTicket> {
+  const { originalPkpassBlob, ...rest } = t
+  if (!originalPkpassBlob) return rest
+  return { ...rest, originalPkpassBlob: await serializeBlob(originalPkpassBlob) }
+}
+
+async function serializeBlob(blob: Blob): Promise<SerializedPkpass> {
+  return {
+    dataUrl: await blobToDataUrl(blob),
+    type: blob.type || 'application/vnd.apple.pkpass',
   }
 }
 
@@ -56,17 +79,7 @@ export async function importBackup(
     )
   }
 
-  const restored = await Promise.all(
-    file.cards.map(async (c): Promise<Card> => {
-      const { originalPkpassBlob, ...rest } = c
-      if (!originalPkpassBlob) return rest as Card
-      const blob = await dataUrlToBlob(
-        originalPkpassBlob.dataUrl,
-        originalPkpassBlob.type,
-      )
-      return { ...(rest as Card), originalPkpassBlob: blob }
-    }),
-  )
+  const restored = await Promise.all(file.cards.map(deserializeCard))
 
   if (strategy === 'replace') {
     await db.cards.clear()
@@ -74,11 +87,34 @@ export async function importBackup(
     return { imported: restored.length, skipped: 0 }
   }
 
-  // merge — skip cards whose ID already exists locally
   const existingIds = new Set(await db.cards.toCollection().primaryKeys())
   const fresh = restored.filter((c) => !existingIds.has(c.id))
   await db.cards.bulkAdd(fresh)
   return { imported: fresh.length, skipped: restored.length - fresh.length }
+}
+
+async function deserializeCard(s: SerializedCard): Promise<Card> {
+  const { originalPkpassBlob, tickets, ...rest } = s
+  const out: Card = { ...(rest as Card) }
+  if (originalPkpassBlob) {
+    out.originalPkpassBlob = await deserializeBlob(originalPkpassBlob)
+  }
+  if (tickets) {
+    out.tickets = await Promise.all(tickets.map(deserializeTicket))
+  }
+  return out
+}
+
+async function deserializeTicket(s: SerializedTicket): Promise<Ticket> {
+  const { originalPkpassBlob, ...rest } = s
+  if (!originalPkpassBlob) return rest
+  return { ...rest, originalPkpassBlob: await deserializeBlob(originalPkpassBlob) }
+}
+
+async function deserializeBlob(s: SerializedPkpass): Promise<Blob> {
+  const response = await fetch(s.dataUrl)
+  const buffer = await response.arrayBuffer()
+  return new Blob([buffer], { type: s.type })
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -88,12 +124,6 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'))
     reader.readAsDataURL(blob)
   })
-}
-
-async function dataUrlToBlob(dataUrl: string, type: string): Promise<Blob> {
-  const response = await fetch(dataUrl)
-  const buffer = await response.arrayBuffer()
-  return new Blob([buffer], { type })
 }
 
 export function downloadBackup(file: BackupFile): void {

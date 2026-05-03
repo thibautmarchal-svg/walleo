@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Pencil, Trash2, Wallet as WalletIcon } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { Barcode } from '@/features/barcode-display/Barcode'
 import { useWakeLock } from '@/lib/hooks/useWakeLock'
+import { getEventTickets, type Ticket } from '@/shared/db/types'
 
 export function CardDetail() {
   const { id } = useParams<{ id: string }>()
@@ -36,6 +37,7 @@ export function CardDetail() {
   }
 
   const isEvent = card.type === 'event'
+  const tickets = isEvent ? getEventTickets(card) : null
   const dateLabel =
     isEvent && card.eventDate
       ? new Date(card.eventDate).toLocaleString('fr-FR', {
@@ -86,32 +88,33 @@ export function CardDetail() {
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col items-center justify-start gap-6 px-5 py-8">
-        <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.08)]">
-          <Barcode
+      <main className="flex flex-1 flex-col items-center gap-6 py-8">
+        {tickets ? (
+          <TicketSwiper tickets={tickets} />
+        ) : (
+          <SingleBarcode
             format={card.barcodeFormat}
             value={card.barcodeValue}
-            className="flex justify-center"
           />
-          <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
-            {card.barcodeValue}
-          </p>
-        </div>
+        )}
 
-        <div className="w-full max-w-md space-y-3 text-sm">
+        <div className="w-full max-w-md space-y-3 px-5 text-sm">
           {card.memberNumber && (
             <DetailRow label="N° de membre" value={card.memberNumber} />
           )}
           {dateLabel && <DetailRow label="Date" value={dateLabel} />}
           {card.venue && <DetailRow label="Lieu" value={card.venue} />}
-          {card.seat && <DetailRow label="Place" value={card.seat} />}
           {card.organizer && (
             <DetailRow label="Émetteur" value={card.organizer} />
           )}
-          <DetailRow
-            label="Format"
-            value={card.barcodeFormat === 'NONE' ? 'Aucun' : card.barcodeFormat}
-          />
+          {!isEvent && (
+            <DetailRow
+              label="Format"
+              value={
+                card.barcodeFormat === 'NONE' ? 'Aucun' : card.barcodeFormat
+              }
+            />
+          )}
         </div>
 
         {card.hasOriginalPkpass && (
@@ -125,6 +128,123 @@ export function CardDetail() {
           </button>
         )}
       </main>
+    </div>
+  )
+}
+
+function SingleBarcode({
+  format,
+  value,
+}: {
+  format: Ticket['barcodeFormat']
+  value: string
+}) {
+  return (
+    <div className="w-full max-w-md px-5">
+      <div className="rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.08)]">
+        <Barcode format={format} value={value} className="flex justify-center" />
+        <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
+          {value}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function TicketSwiper({ tickets }: { tickets: Ticket[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [activeIdx, setActiveIdx] = useState(0)
+
+  const isMulti = tickets.length > 1
+
+  useEffect(() => {
+    if (!isMulti) return
+    const el = scrollRef.current
+    if (!el) return
+    let frame = 0
+    const onScroll = (): void => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const idx = Math.round(el.scrollLeft / el.clientWidth)
+        setActiveIdx(Math.max(0, Math.min(tickets.length - 1, idx)))
+      })
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(frame)
+    }
+  }, [isMulti, tickets.length])
+
+  const goTo = (idx: number): void => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo({ left: idx * el.clientWidth, behavior: 'smooth' })
+  }
+
+  return (
+    <div className="w-full">
+      {isMulti && (
+        <div className="mb-4 flex items-center justify-center gap-3 px-5">
+          <span className="text-xs font-medium text-neutral-500">
+            Billet {activeIdx + 1} sur {tickets.length}
+          </span>
+          <div className="flex gap-1.5" role="tablist" aria-label="Billets">
+            {tickets.map((t, i) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={i === activeIdx}
+                aria-label={`Aller au billet ${i + 1}`}
+                onClick={() => goTo(i)}
+                className={`h-2 rounded-full transition-all ${
+                  i === activeIdx ? 'w-6 bg-walleo-black' : 'w-2 bg-neutral-300'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      <div
+        ref={scrollRef}
+        className="flex w-full snap-x snap-mandatory overflow-x-auto scroll-smooth"
+        style={{ scrollbarWidth: 'none' }}
+      >
+        {tickets.map((t) => (
+          <div
+            key={t.id}
+            className="flex w-full shrink-0 snap-center justify-center px-5"
+          >
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.08)]">
+              <Barcode
+                format={t.barcodeFormat}
+                value={t.barcodeValue}
+                className="flex justify-center"
+              />
+              <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
+                {t.barcodeValue}
+              </p>
+              {(t.holderName || t.seat) && (
+                <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">
+                  {t.holderName && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-neutral-500">Au nom de</span>
+                      <span className="font-medium">{t.holderName}</span>
+                    </div>
+                  )}
+                  {t.seat && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-neutral-500">Place</span>
+                      <span className="text-right font-medium">{t.seat}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
