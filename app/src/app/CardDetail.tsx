@@ -4,6 +4,7 @@ import { ArrowLeft, Pencil, Trash2, Wallet as WalletIcon } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { Barcode } from '@/features/barcode-display/Barcode'
 import { useWakeLock } from '@/lib/hooks/useWakeLock'
+import { exportPkpassToWallet } from '@/features/wallet-reexport/exportPkpass'
 import { getEventTickets, type Ticket } from '@/shared/db/types'
 
 export function CardDetail() {
@@ -11,6 +12,8 @@ export function CardDetail() {
   const navigate = useNavigate()
   const card = useCardsStore((s) => s.cards.find((c) => c.id === id))
   const remove = useCardsStore((s) => s.remove)
+  const update = useCardsStore((s) => s.update)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   useWakeLock(true)
 
@@ -56,6 +59,16 @@ export function CardDetail() {
     navigate('/')
   }
 
+  const onExportPkpass = async (blob: Blob): Promise<void> => {
+    setExportError(null)
+    const result = await exportPkpassToWallet(blob, `${card.name}.pkpass`)
+    if (!result.ok) {
+      setExportError(result.message ?? 'Échec de l\'export.')
+      return
+    }
+    await update(card.id, { lastWalletExportAt: Date.now() })
+  }
+
   return (
     <div className="flex min-h-full flex-col bg-white text-walleo-black">
       <header className="safe-top sticky top-0 z-10 flex items-center justify-between border-b border-neutral-200 bg-white/90 px-4 py-3 backdrop-blur-md">
@@ -90,7 +103,7 @@ export function CardDetail() {
 
       <main className="flex flex-1 flex-col items-center gap-6 py-8">
         {tickets ? (
-          <TicketSwiper tickets={tickets} />
+          <TicketSwiper tickets={tickets} onExportPkpass={onExportPkpass} />
         ) : (
           <SingleBarcode
             format={card.barcodeFormat}
@@ -117,15 +130,25 @@ export function CardDetail() {
           )}
         </div>
 
-        {card.hasOriginalPkpass && (
+        {/* Loyalty card with original pkpass — rare case but supported */}
+        {!isEvent && card.hasOriginalPkpass && card.originalPkpassBlob && (
           <button
             type="button"
-            className="flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-walleo-black px-5 py-3 text-sm font-semibold text-white"
-            onClick={() => alert('Re-export Wallet — Phase 3')}
+            onClick={() =>
+              card.originalPkpassBlob &&
+              void onExportPkpass(card.originalPkpassBlob)
+            }
+            className="mx-5 flex w-full max-w-md items-center justify-center gap-2 rounded-full bg-walleo-black px-5 py-3 text-sm font-semibold text-white active:scale-95"
           >
             <WalletIcon className="h-4 w-4" />
             Ajouter à Apple Wallet
           </button>
+        )}
+
+        {exportError && (
+          <p className="mx-5 max-w-md rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-center text-xs text-destructive">
+            {exportError}
+          </p>
         )}
       </main>
     </div>
@@ -151,7 +174,12 @@ function SingleBarcode({
   )
 }
 
-function TicketSwiper({ tickets }: { tickets: Ticket[] }) {
+interface TicketSwiperProps {
+  tickets: Ticket[]
+  onExportPkpass: (blob: Blob) => Promise<void>
+}
+
+function TicketSwiper({ tickets, onExportPkpass }: TicketSwiperProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [activeIdx, setActiveIdx] = useState(0)
 
@@ -222,9 +250,11 @@ function TicketSwiper({ tickets }: { tickets: Ticket[] }) {
                 value={t.barcodeValue}
                 className="flex justify-center"
               />
-              <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
-                {t.barcodeValue}
-              </p>
+              {t.barcodeValue && (
+                <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
+                  {t.barcodeValue}
+                </p>
+              )}
               {(t.holderName || t.seat) && (
                 <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">
                   {t.holderName && (
@@ -240,6 +270,20 @@ function TicketSwiper({ tickets }: { tickets: Ticket[] }) {
                     </div>
                   )}
                 </div>
+              )}
+              {t.hasOriginalPkpass && t.originalPkpassBlob && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (t.originalPkpassBlob) {
+                      void onExportPkpass(t.originalPkpassBlob)
+                    }
+                  }}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-walleo-black px-4 py-2.5 text-xs font-semibold text-white active:scale-95"
+                >
+                  <WalletIcon className="h-3.5 w-3.5" />
+                  Ajouter à Apple Wallet
+                </button>
               )}
             </div>
           </div>
