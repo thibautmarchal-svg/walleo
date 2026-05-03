@@ -1,55 +1,76 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import bwipjs from 'bwip-js/browser'
 import type { BarcodeFormat } from '@/shared/db/types'
 
 interface BarcodeProps {
   format: BarcodeFormat
   value: string
-  scale?: number
-  height?: number
   className?: string
 }
 
-const FORMAT_TO_BCID: Record<Exclude<BarcodeFormat, 'NONE'>, string> = {
-  QR: 'qrcode',
-  EAN13: 'ean13',
-  CODE128: 'code128',
-  PDF417: 'pdf417',
-  AZTEC: 'azteccode',
+interface BwipOptions {
+  bcid: string
+  text: string
+  scale: number
+  height?: number
+  includetext?: boolean
+  textxalign?: 'center'
+  backgroundcolor: string
+  paddingwidth: number
+  paddingheight: number
 }
 
-export function Barcode({
-  format,
-  value,
-  scale = 4,
-  height = 20,
-  className,
-}: BarcodeProps) {
+function getOptions(format: BarcodeFormat, value: string): BwipOptions | null {
+  if (format === 'NONE') return null
+  const base = {
+    text: value,
+    backgroundcolor: 'FFFFFF',
+    paddingwidth: 8,
+    paddingheight: 8,
+  }
+  switch (format) {
+    case 'QR':
+      return { ...base, bcid: 'qrcode', scale: 6 }
+    case 'AZTEC':
+      return { ...base, bcid: 'azteccode', scale: 6 }
+    case 'EAN13':
+      return {
+        ...base,
+        bcid: 'ean13',
+        scale: 3,
+        height: 20,
+        includetext: true,
+        textxalign: 'center',
+      }
+    case 'CODE128':
+      return {
+        ...base,
+        bcid: 'code128',
+        scale: 3,
+        height: 20,
+        includetext: true,
+        textxalign: 'center',
+      }
+    case 'PDF417':
+      return { ...base, bcid: 'pdf417', scale: 3, height: 8 }
+  }
+}
+
+export function Barcode({ format, value, className }: BarcodeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const errorRef = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (format === 'NONE' || !canvasRef.current) return
-    const canvas = canvasRef.current
-    const errorEl = errorRef.current
+    if (!canvasRef.current) return
+    const opts = getOptions(format, value)
+    if (!opts) return
     try {
-      bwipjs.toCanvas(canvas, {
-        bcid: FORMAT_TO_BCID[format],
-        text: value,
-        scale,
-        height,
-        includetext: format === 'EAN13' || format === 'CODE128',
-        textxalign: 'center',
-        backgroundcolor: 'FFFFFF',
-        paddingwidth: 8,
-        paddingheight: 8,
-      })
-      if (errorEl) errorEl.textContent = ''
+      bwipjs.toCanvas(canvasRef.current, opts)
+      setError(null)
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (errorEl) errorEl.textContent = message
+      setError(err instanceof Error ? err.message : String(err))
     }
-  }, [format, value, scale, height])
+  }, [format, value])
 
   if (format === 'NONE') {
     return (
@@ -63,8 +84,8 @@ export function Barcode({
 
   return (
     <div className={className}>
-      <canvas ref={canvasRef} className="max-w-full h-auto bg-white rounded" />
-      <div ref={errorRef} className="text-xs text-destructive mt-2" />
+      <canvas ref={canvasRef} className="mx-auto block h-auto max-w-full bg-white" />
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
     </div>
   )
 }

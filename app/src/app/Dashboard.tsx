@@ -148,7 +148,8 @@ export function Dashboard() {
       <Link
         to="/add"
         aria-label="Ajouter une carte"
-        className="safe-bottom fixed bottom-6 right-6 flex h-14 w-14 items-center justify-center rounded-full bg-walleo-yellow text-walleo-black shadow-2xl shadow-walleo-yellow/30 transition active:scale-95"
+        style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
+        className="fixed right-6 flex h-14 w-14 items-center justify-center rounded-full bg-walleo-yellow text-walleo-black shadow-2xl shadow-walleo-yellow/30 transition active:scale-95"
       >
         <Plus className="h-7 w-7" strokeWidth={2.5} />
       </Link>

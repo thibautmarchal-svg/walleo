@@ -81,8 +81,6 @@ export function CardDetail() {
           <Barcode
             format={card.barcodeFormat}
             value={card.barcodeValue}
-            scale={card.barcodeFormat === 'QR' ? 8 : 4}
-            height={card.barcodeFormat === 'QR' ? 60 : 24}
             className="flex justify-center"
           />
           <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
