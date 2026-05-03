@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, ScanLine, X } from 'lucide-react'
+import { Camera, FileText, ScanLine, X } from 'lucide-react'
 
 interface AddMenuProps {
   open: boolean
@@ -24,6 +24,10 @@ export function AddMenu({ open, onClose }: AddMenuProps) {
   const goScan = (): void => {
     onClose()
     navigate('/scan')
+  }
+  const goImport = (): void => {
+    onClose()
+    navigate('/import')
   }
   const goForm = (): void => {
     onClose()
@@ -63,6 +67,12 @@ export function AddMenu({ open, onClose }: AddMenuProps) {
             hint="Flashe un QR ou un code-barres en direct."
             onClick={goScan}
             primary
+          />
+          <MenuItem
+            icon={<FileText className="h-5 w-5" />}
+            label="Coller un email / PDF"
+            hint="Ticketmaster, FNAC, See Tickets, SNCF…"
+            onClick={goImport}
           />
           <MenuItem
             icon={<Camera className="h-5 w-5" />}

@@ -84,13 +84,23 @@ interface InitialBarcodeState {
     value: string
     source?: CardSource
   }
+  prefill?: {
+    type?: CardType
+    name?: string
+    eventDate?: string
+    venue?: string
+    organizer?: string
+    tickets?: Ticket[]
+    source?: CardSource
+  }
 }
 
 export function CardForm({ mode }: CardFormProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const initialBarcode = (location.state as InitialBarcodeState | null)
-    ?.initialBarcode
+  const locationState = location.state as InitialBarcodeState | null
+  const initialBarcode = locationState?.initialBarcode
+  const prefill = locationState?.prefill
   const params = useParams<{ id: string }>()
   const editingId = mode === 'edit' ? params.id : undefined
   const existing = useCardsStore((s) =>
@@ -116,6 +126,10 @@ export function CardForm({ mode }: CardFormProps) {
       }
       return []
     }
+    // New card from /import (email/PDF parser) — full ticket list
+    if (prefill?.tickets && prefill.tickets.length > 0) {
+      return prefill.tickets
+    }
     // New card from scanner — pre-seed a ticket so event mode works too
     if (initialBarcode) {
       return [
@@ -130,8 +144,10 @@ export function CardForm({ mode }: CardFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing?.id])
 
-  const [type, setType] = useState<CardType>(existing?.type ?? 'loyalty')
-  const [name, setName] = useState(existing?.name ?? '')
+  const [type, setType] = useState<CardType>(
+    existing?.type ?? prefill?.type ?? 'loyalty',
+  )
+  const [name, setName] = useState(existing?.name ?? prefill?.name ?? '')
   const [brandColor, setBrandColor] = useState(
     existing?.brandColor ?? PRESET_COLORS[0]!,
   )
@@ -145,10 +161,14 @@ export function CardForm({ mode }: CardFormProps) {
   const [memberNumber, setMemberNumber] = useState(existing?.memberNumber ?? '')
   // Event fields
   const [eventDate, setEventDate] = useState(
-    existing?.eventDate ? isoToLocalDatetime(existing.eventDate) : '',
+    existing?.eventDate
+      ? isoToLocalDatetime(existing.eventDate)
+      : prefill?.eventDate ?? '',
   )
-  const [venue, setVenue] = useState(existing?.venue ?? '')
-  const [organizer, setOrganizer] = useState(existing?.organizer ?? '')
+  const [venue, setVenue] = useState(existing?.venue ?? prefill?.venue ?? '')
+  const [organizer, setOrganizer] = useState(
+    existing?.organizer ?? prefill?.organizer ?? '',
+  )
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets)
 
   const [submitting, setSubmitting] = useState(false)
@@ -158,7 +178,10 @@ export function CardForm({ mode }: CardFormProps) {
       : { kind: 'idle' },
   )
   const [importSource, setImportSource] = useState<CardSource>(
-    existing?.source ?? initialBarcode?.source ?? 'manual',
+    existing?.source ??
+      prefill?.source ??
+      initialBarcode?.source ??
+      'manual',
   )
   const [cropSource, setCropSource] = useState<{
     file: File | Blob
