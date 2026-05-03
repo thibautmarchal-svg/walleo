@@ -4,8 +4,10 @@
 # All routes fall back to index.html so React Router can handle them client-side.
 
 [build]
+  # When `base` is set, `publish` and `command` paths are resolved
+  # relative to that base directory — so `publish = "dist"` becomes `app/dist`.
   base = "app"
-  publish = "app/dist"
+  publish = "dist"
   command = "npm run build"
 
 [build.environment]
