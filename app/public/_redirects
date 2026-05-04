@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects — SPA fallback so React Router can
+# handle deep-link refreshes (e.g. /card/abc123 reloaded).
+# Format: <from> <to> <status>
+/*  /index.html  200
