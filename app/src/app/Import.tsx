@@ -147,11 +147,15 @@ export function Import() {
       }
     } catch (e) {
       console.error('[walleo] Import parse failed', e)
-      setError(
+      const detail =
         e instanceof Error
-          ? `Échec de l'analyse : ${e.message}`
-          : "Erreur d'analyse.",
-      )
+          ? e.message ||
+            e.name ||
+            e.constructor.name ||
+            String(e) ||
+            'erreur inconnue'
+          : String(e ?? 'erreur inconnue')
+      setError(`Échec de l'analyse : ${detail}`)
     } finally {
       setProgress(null)
       setParsing(false)

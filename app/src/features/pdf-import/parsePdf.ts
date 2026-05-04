@@ -325,65 +325,71 @@ function decodeAllBarcodesInCanvas(
   if (!ctx) return out
 
   for (let attempt = 0; attempt < 10; attempt++) {
-    let result: import('@zxing/library').Result | undefined
     try {
-      result = reader.decodeFromCanvas(canvas)
-    } catch {
+      const result = reader.decodeFromCanvas(canvas)
+      if (!result) break
+
+      const value = result.getText()
+      if (seen.has(value)) {
+        // Same code detected twice — masking failed, stop to avoid loop
+        break
+      }
+      seen.add(value)
+
+      const formatNum = result.getBarcodeFormat()
+      const formatName = (
+        lib.BarcodeFormat as unknown as Record<number, string>
+      )[formatNum]
+      const domainFormat = formatName ? ZXING_TO_DOMAIN[formatName] : undefined
+      if (domainFormat) {
+        let normalized = value
+        if (formatName === 'UPC_A' && value.length === 12) {
+          normalized = '0' + value
+        }
+        out.push({ format: domainFormat, value: normalized })
+      }
+
+      // Compute bbox from the result's anchor points, then white-out so
+      // the next decodeFromCanvas iteration finds a different code.
+      const points = result.getResultPoints?.()
+      if (!points || points.length === 0) break
+
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const p of points) {
+        if (!p || typeof p.getX !== 'function' || typeof p.getY !== 'function') {
+          continue
+        }
+        const x = p.getX()
+        const y = p.getY()
+        if (Number.isFinite(x) && Number.isFinite(y)) {
+          if (x < minX) minX = x
+          if (y < minY) minY = y
+          if (x > maxX) maxX = x
+          if (y > maxY) maxY = y
+        }
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(maxX)) break
+
+      const padding = Math.max(40, (maxX - minX) * 0.3, (maxY - minY) * 0.3)
+      ctx.fillStyle = '#FFFFFF'
+      ctx.fillRect(
+        minX - padding,
+        minY - padding,
+        maxX - minX + padding * 2,
+        maxY - minY + padding * 2,
+      )
+    } catch (err) {
+      // NotFoundException (no more codes), or unexpected runtime — either
+      // way we have what we already decoded, stop and return it.
+      const name = (err as Error & { name?: string })?.name
+      if (name && name !== 'NotFoundException') {
+        console.warn('[walleo] decodeAllBarcodesInCanvas inner error', err)
+      }
       break
     }
-    if (!result) break
-
-    const value = result.getText()
-    if (seen.has(value)) {
-      // Same code detected twice — masking failed or no more codes left
-      break
-    }
-    seen.add(value)
-
-    const formatNum = result.getBarcodeFormat()
-    const formatName = (lib.BarcodeFormat as unknown as Record<number, string>)[
-      formatNum
-    ]
-    const domainFormat = formatName ? ZXING_TO_DOMAIN[formatName] : undefined
-    if (domainFormat) {
-      let normalized = value
-      if (formatName === 'UPC_A' && value.length === 12) {
-        normalized = '0' + value
-      }
-      out.push({ format: domainFormat, value: normalized })
-    }
-
-    // Compute bbox from the result's anchor points, then white-out
-    const points = result.getResultPoints()
-    if (!points || points.length === 0) break
-
-    let minX = Infinity
-    let minY = Infinity
-    let maxX = -Infinity
-    let maxY = -Infinity
-    for (const p of points) {
-      if (!p) continue
-      const x = p.getX()
-      const y = p.getY()
-      if (Number.isFinite(x) && Number.isFinite(y)) {
-        if (x < minX) minX = x
-        if (y < minY) minY = y
-        if (x > maxX) maxX = x
-        if (y > maxY) maxY = y
-      }
-    }
-    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) break
-
-    // Generous padding so the masked rect covers the whole code (zxing
-    // points are anchor markers, not full corners on 1D codes).
-    const padding = Math.max(40, (maxX - minX) * 0.3, (maxY - minY) * 0.3)
-    ctx.fillStyle = '#FFFFFF'
-    ctx.fillRect(
-      minX - padding,
-      minY - padding,
-      maxX - minX + padding * 2,
-      maxY - minY + padding * 2,
-    )
   }
 
   return out
