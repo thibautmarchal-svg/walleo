@@ -165,10 +165,17 @@ export function CardForm({ mode }: CardFormProps) {
       ? isoToLocalDatetime(existing.eventDate)
       : prefill?.eventDate ?? '',
   )
+  const [eventEndDate, setEventEndDate] = useState(
+    existing?.eventEndDate ? isoToLocalDatetime(existing.eventEndDate) : '',
+  )
+  const [multiDay, setMultiDay] = useState<boolean>(
+    !!existing?.eventEndDate,
+  )
   const [venue, setVenue] = useState(existing?.venue ?? prefill?.venue ?? '')
   const [organizer, setOrganizer] = useState(
     existing?.organizer ?? prefill?.organizer ?? '',
   )
+  const [notes, setNotes] = useState(existing?.notes ?? '')
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets)
 
   const [submitting, setSubmitting] = useState(false)
@@ -215,8 +222,13 @@ export function CardForm({ mode }: CardFormProps) {
     setEventDate(
       existing.eventDate ? isoToLocalDatetime(existing.eventDate) : '',
     )
+    setEventEndDate(
+      existing.eventEndDate ? isoToLocalDatetime(existing.eventEndDate) : '',
+    )
+    setMultiDay(!!existing.eventEndDate)
     setVenue(existing.venue ?? '')
     setOrganizer(existing.organizer ?? '')
+    setNotes(existing.notes ?? '')
     setTickets(initialTickets)
     setImportSource(existing.source)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -564,9 +576,14 @@ export function CardForm({ mode }: CardFormProps) {
           type === 'event' && eventDate
             ? new Date(eventDate).toISOString()
             : undefined,
+        eventEndDate:
+          type === 'event' && multiDay && eventEndDate
+            ? new Date(eventEndDate).toISOString()
+            : undefined,
         venue: type === 'event' && venue.trim() ? venue.trim() : undefined,
         organizer:
           type === 'event' && organizer.trim() ? organizer.trim() : undefined,
+        notes: notes.trim() ? notes.trim() : undefined,
         tickets:
           cleanTickets && cleanTickets.length > 0 ? cleanTickets : undefined,
       }
@@ -584,8 +601,12 @@ export function CardForm({ mode }: CardFormProps) {
           source: payload.source,
           ...(payload.memberNumber ? { memberNumber: payload.memberNumber } : {}),
           ...(payload.eventDate ? { eventDate: payload.eventDate } : {}),
+          ...(payload.eventEndDate
+            ? { eventEndDate: payload.eventEndDate }
+            : {}),
           ...(payload.venue ? { venue: payload.venue } : {}),
           ...(payload.organizer ? { organizer: payload.organizer } : {}),
+          ...(payload.notes ? { notes: payload.notes } : {}),
           ...(payload.tickets ? { tickets: payload.tickets } : {}),
         })
         navigate(`/card/${card.id}`, { replace: true })
@@ -761,7 +782,7 @@ export function CardForm({ mode }: CardFormProps) {
           {/* ── EVENT: tickets list + multi-import ── */}
           {type === 'event' && (
             <>
-              <Field label="Date & heure">
+              <Field label={multiDay ? 'Début' : 'Date & heure'}>
                 <input
                   type="datetime-local"
                   value={eventDate}
@@ -769,6 +790,27 @@ export function CardForm({ mode }: CardFormProps) {
                   className="w-full rounded-xl border border-border bg-secondary px-4 py-3 text-base outline-none focus:border-walleo-yellow"
                 />
               </Field>
+
+              <label className="flex items-center gap-3 rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={multiDay}
+                  onChange={(e) => setMultiDay(e.target.checked)}
+                  className="h-4 w-4 accent-walleo-yellow"
+                />
+                <span>Événement sur plusieurs jours (festival, week-end…)</span>
+              </label>
+
+              {multiDay && (
+                <Field label="Fin">
+                  <input
+                    type="datetime-local"
+                    value={eventEndDate}
+                    onChange={(e) => setEventEndDate(e.target.value)}
+                    className="w-full rounded-xl border border-border bg-secondary px-4 py-3 text-base outline-none focus:border-walleo-yellow"
+                  />
+                </Field>
+              )}
               <Field label="Lieu">
                 <input
                   value={venue}
@@ -837,6 +879,17 @@ export function CardForm({ mode }: CardFormProps) {
               </div>
             </>
           )}
+
+          {/* Notes — available on both loyalty and event cards */}
+          <Field label="Notes (optionnel)">
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="PIN, infos pratiques, bracelet à récupérer…"
+              rows={3}
+              className="w-full rounded-xl border border-border bg-secondary px-4 py-3 text-base outline-none focus:border-walleo-yellow"
+            />
+          </Field>
 
           <button
             type="submit"

@@ -17,14 +17,7 @@ export function CardTile({ card }: CardTileProps) {
   // WCAG AA 4.5:1). Computing luminance ourselves keeps the choice CSS-free.
   const textOnCard = readableTextColor(card.brandColor)
 
-  const dateLabel =
-    isEvent && card.eventDate
-      ? new Date(card.eventDate).toLocaleDateString('fr-FR', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-        })
-      : null
+  const dateLabel = isEvent && card.eventDate ? formatRelativeDate(card) : null
 
   return (
     <Link
@@ -90,6 +83,66 @@ function shade(hex: string, percent: number): string {
 
 function clamp(n: number): number {
   return Math.max(0, Math.min(255, n))
+}
+
+/** Renders the event date label as a human-readable relative phrase
+ *  ("Aujourd'hui", "Demain", "Dans 3 jours", "Hier", "Il y a 2 semaines",
+ *   "23 mai 2026" beyond a few weeks). Falls back to short date for edge
+ *  cases. Multi-day events show "Du X au Y" instead. */
+function formatRelativeDate(card: Card): string {
+  const start = card.eventDate ? Date.parse(card.eventDate) : NaN
+  const end = card.eventEndDate ? Date.parse(card.eventEndDate) : NaN
+  if (!Number.isFinite(start)) return ''
+
+  const now = Date.now()
+  const startDay = startOfDay(start)
+  const today = startOfDay(now)
+  const diffDays = Math.round((startDay - today) / (1000 * 60 * 60 * 24))
+
+  // Multi-day event in the future or current
+  if (Number.isFinite(end)) {
+    const endDay = startOfDay(end)
+    if (today >= startDay && today <= endDay) return 'En cours'
+    if (today < startDay) return relativeFutureLabel(diffDays, start)
+    // Past — fall through to past handling using endDay
+    const pastDiff = Math.round((today - endDay) / (1000 * 60 * 60 * 24))
+    return relativePastLabel(pastDiff, end)
+  }
+
+  if (diffDays === 0) return "Aujourd'hui"
+  if (diffDays > 0) return relativeFutureLabel(diffDays, start)
+  return relativePastLabel(-diffDays, start)
+}
+
+function startOfDay(ts: number): number {
+  const d = new Date(ts)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+function relativeFutureLabel(days: number, iso: number): string {
+  if (days === 0) return "Aujourd'hui"
+  if (days === 1) return 'Demain'
+  if (days <= 7) return `Dans ${days} jours`
+  if (days <= 14) return 'La semaine prochaine'
+  if (days <= 60) return `Dans ${Math.round(days / 7)} semaines`
+  return new Date(iso).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+function relativePastLabel(days: number, iso: number): string {
+  if (days === 0) return "Aujourd'hui"
+  if (days === 1) return 'Hier'
+  if (days <= 7) return `Il y a ${days} jours`
+  if (days <= 30) return `Il y a ${Math.round(days / 7)} semaines`
+  return new Date(iso).toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 /** Returns 'black' or 'white' for the most readable text colour on a given

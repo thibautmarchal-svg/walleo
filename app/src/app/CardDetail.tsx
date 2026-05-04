@@ -52,17 +52,24 @@ export function CardDetail() {
 
   const isEvent = card.type === 'event'
   const tickets = isEvent ? getEventTickets(card) : null
-  const dateLabel =
-    isEvent && card.eventDate
-      ? new Date(card.eventDate).toLocaleString('fr-FR', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : null
+  const dateLabel = (() => {
+    if (!isEvent || !card.eventDate) return null
+    const fmt = (iso: string, withTime: boolean): string =>
+      new Date(iso).toLocaleString('fr-FR', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+        ...(withTime
+          ? ({ hour: '2-digit', minute: '2-digit' } as const)
+          : {}),
+      })
+    if (card.eventEndDate) {
+      // Multi-day event — show "Du <start> au <end>"
+      return `Du ${fmt(card.eventDate, false)} au ${fmt(card.eventEndDate, false)}`
+    }
+    return fmt(card.eventDate, true)
+  })()
 
   const confirmDelete = async (): Promise<void> => {
     if (!card) return
@@ -162,6 +169,16 @@ export function CardDetail() {
                 card.barcodeFormat === 'NONE' ? 'Aucun' : card.barcodeFormat
               }
             />
+          )}
+          {card.notes && (
+            <div className="rounded-xl bg-neutral-100 px-4 py-3">
+              <span className="mb-1 block text-xs uppercase tracking-wide text-neutral-500">
+                Notes
+              </span>
+              <p className="whitespace-pre-wrap text-sm text-walleo-black">
+                {card.notes}
+              </p>
+            </div>
           )}
         </div>
 

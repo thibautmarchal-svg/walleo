@@ -1,43 +1,88 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Settings as SettingsIcon, Wallet, X } from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { CardTile } from '@/features/cards/CardTile'
 import { cn } from '@/lib/utils'
+import { isPastEvent } from '@/shared/db/types'
 import { AddMenu } from './AddMenu'
 
-type Filter = 'all' | 'loyalty' | 'event' | 'upcoming'
+type Filter = 'all' | 'loyalty' | 'event' | 'upcoming' | 'archive'
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'all', label: 'Tout' },
   { value: 'loyalty', label: 'Fidélité' },
   { value: 'event', label: 'Billets' },
   { value: 'upcoming', label: 'À venir' },
+  { value: 'archive', label: 'Archive' },
 ]
+
+const VALID_FILTERS: ReadonlySet<string> = new Set(FILTERS.map((f) => f.value))
 
 export function Dashboard() {
   const cards = useCardsStore((s) => s.cards)
   const loading = useCardsStore((s) => s.loading)
-  const [filter, setFilter] = useState<Filter>('all')
-  const [search, setSearch] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const filter: Filter = VALID_FILTERS.has(searchParams.get('filter') ?? '')
+    ? ((searchParams.get('filter') as Filter) ?? 'all')
+    : 'all'
+  const search = searchParams.get('q') ?? ''
   const [addMenuOpen, setAddMenuOpen] = useState(false)
 
+  const setFilter = (next: Filter): void => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        if (next === 'all') p.delete('filter')
+        else p.set('filter', next)
+        return p
+      },
+      { replace: true },
+    )
+  }
+
+  const setSearch = (next: string): void => {
+    setSearchParams(
+      (prev) => {
+        const p = new URLSearchParams(prev)
+        if (!next.trim()) p.delete('q')
+        else p.set('q', next)
+        return p
+      },
+      { replace: true },
+    )
+  }
+
   const filtered = useMemo(() => {
+    const now = Date.now()
     let result = cards
 
-    if (filter === 'upcoming') {
-      const now = Date.now()
+    if (filter === 'archive') {
+      // Past events only, most recent first
       result = result
-        .filter(
-          (c) =>
-            c.type === 'event' && c.eventDate && Date.parse(c.eventDate) >= now,
-        )
+        .filter((c) => c.type === 'event' && isPastEvent(c, now))
+        .sort((a, b) => {
+          const aEnd = a.eventEndDate ?? a.eventDate ?? ''
+          const bEnd = b.eventEndDate ?? b.eventDate ?? ''
+          return Date.parse(bEnd) - Date.parse(aEnd)
+        })
+    } else if (filter === 'upcoming') {
+      // Future events only, soonest first
+      result = result
+        .filter((c) => c.type === 'event' && !isPastEvent(c, now))
         .sort(
           (a, b) =>
             Date.parse(a.eventDate ?? '') - Date.parse(b.eventDate ?? ''),
         )
-    } else if (filter !== 'all') {
-      result = result.filter((c) => c.type === filter)
+    } else if (filter === 'event') {
+      // All events, future first then past — but archives are still
+      // browsable from the dedicated tab
+      result = result.filter((c) => c.type === 'event' && !isPastEvent(c, now))
+    } else if (filter === 'loyalty') {
+      result = result.filter((c) => c.type === 'loyalty')
+    } else {
+      // 'all' = everything except archived past events
+      result = result.filter((c) => !isPastEvent(c, now))
     }
 
     const q = search.trim().toLowerCase()

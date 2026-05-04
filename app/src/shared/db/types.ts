@@ -55,7 +55,10 @@ export interface Card {
   memberNumber?: string
 
   // event-specific
-  eventDate?: string // ISO 8601
+  eventDate?: string // ISO 8601 — start date for multi-day events
+  /** Optional end date for multi-day events (festivals, weekends).
+   *  When set, the event is considered "past" only after eventEndDate. */
+  eventEndDate?: string
   venue?: string
   seat?: string // legacy / single-seat events; prefer Ticket.seat for multi
   organizer?: string
@@ -77,6 +80,20 @@ export interface Card {
 }
 
 export type NewCardInput = Omit<Card, 'id' | 'createdAt' | 'updatedAt'>
+
+/** Returns true when an event card's date is in the past.
+ *  Uses eventEndDate if set (multi-day events), else eventDate.
+ *  Returns false for loyalty cards or events without dates. */
+export function isPastEvent(card: Card, now: number = Date.now()): boolean {
+  if (card.type !== 'event') return false
+  const cutoff = card.eventEndDate ?? card.eventDate
+  if (!cutoff) return false
+  // Add 23h59 to compare day-end, so an event on today's date isn't archived
+  // before the day is actually over.
+  const dt = new Date(cutoff)
+  dt.setHours(23, 59, 59, 999)
+  return dt.getTime() < now
+}
 
 /** Returns the active list of tickets for an event card.
  *  Always returns at least one ticket — falls back to the top-level barcode
