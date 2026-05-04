@@ -240,6 +240,10 @@ export function Scanner() {
             <Corner className="-right-px -top-px border-r-4 border-t-4 rounded-tr-3xl" />
             <Corner className="-left-px -bottom-px border-l-4 border-b-4 rounded-bl-3xl" />
             <Corner className="-right-px -bottom-px border-r-4 border-b-4 rounded-br-3xl" />
+            {/* Animated scan line — only when the camera is actually live */}
+            {ready && !error && (
+              <div className="scan-line absolute left-3 right-3 h-0.5 rounded-full bg-walleo-yellow shadow-[0_0_12px_rgba(255,214,10,0.6)]" />
+            )}
           </div>
         </div>
 

@@ -40,12 +40,12 @@ export function AddMenu({ open, onClose }: AddMenuProps) {
         type="button"
         aria-label="Fermer"
         onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 animate-in fade-in bg-black/60 backdrop-blur-sm duration-150"
       />
       <div
         role="dialog"
         aria-label="Ajouter une carte"
-        className="relative w-full max-w-md rounded-t-3xl bg-card p-5 sm:rounded-3xl"
+        className="relative w-full max-w-md animate-in slide-in-from-bottom rounded-t-3xl bg-card p-5 duration-200 sm:rounded-3xl sm:slide-in-from-bottom-2"
         style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
       >
         <div className="mb-4 flex items-center justify-between">
