@@ -72,7 +72,9 @@ export async function parsePdfFile(
     pdfjsLib = await import('pdfjs-dist')
   } catch (err) {
     console.error('[walleo] pdfjs-dist failed to load', err)
-    throw new Error("Le module PDF n'a pas pu se charger.")
+    throw new Error(
+      `[pdfjs-import] ${err instanceof Error ? err.message || err.name : String(err)}`,
+    )
   }
 
   if (!workerConfigured) {
@@ -87,11 +89,9 @@ export async function parsePdfFile(
     pdf = await loadingTask.promise
   } catch (err) {
     console.error('[walleo] PDF load failed', err)
-    throw new Error(
-      err instanceof Error
-        ? `Le PDF est corrompu ou protégé : ${err.message}`
-        : 'Le PDF est corrompu ou protégé.',
-    )
+    const detail =
+      err instanceof Error ? err.message || err.name : String(err)
+    throw new Error(`[pdf-load] ${detail}`)
   }
 
   const numPages = pdf.numPages
@@ -228,14 +228,39 @@ async function renderAndScan(
   numPages: number,
   onProgress?: PdfParseOptions['onProgress'],
 ): Promise<FallbackResult> {
-  // Lazy-load OCR + barcode libs
-  const [{ createOcrSession }, zxingBrowser, zxingLib] = await Promise.all([
-    import('@/features/ocr/extractTicketInfo'),
-    import('@zxing/browser'),
-    import('@zxing/library'),
-  ])
+  // Lazy-load OCR + barcode libs — each in its own try/catch so we know
+  // exactly which module failed if the user reports a NetworkError.
+  let createOcrSessionFn: typeof import('@/features/ocr/extractTicketInfo')['createOcrSession']
+  let zxingBrowser: typeof import('@zxing/browser')
+  let zxingLib: typeof import('@zxing/library')
+  try {
+    const ocrModule = await import('@/features/ocr/extractTicketInfo')
+    createOcrSessionFn = ocrModule.createOcrSession
+  } catch (err) {
+    console.error('[walleo] OCR module import failed', err)
+    throw new Error(
+      `[ocr-module] ${err instanceof Error ? err.message || err.name : String(err)}`,
+    )
+  }
+  try {
+    zxingBrowser = await import('@zxing/browser')
+    zxingLib = await import('@zxing/library')
+  } catch (err) {
+    console.error('[walleo] zxing import failed', err)
+    throw new Error(
+      `[zxing] ${err instanceof Error ? err.message || err.name : String(err)}`,
+    )
+  }
 
-  const session = await createOcrSession()
+  let session: Awaited<ReturnType<typeof createOcrSessionFn>>
+  try {
+    session = await createOcrSessionFn()
+  } catch (err) {
+    console.error('[walleo] Tesseract createOcrSession failed', err)
+    throw new Error(
+      `[tesseract-init] ${err instanceof Error ? err.message || err.name : String(err)}`,
+    )
+  }
 
   const hints = new Map<number, unknown>()
   hints.set(zxingLib.DecodeHintType.TRY_HARDER, true)
