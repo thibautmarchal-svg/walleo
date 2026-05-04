@@ -18,6 +18,8 @@ import {
 import {
   parsePdfFile,
   validatePkpassBlob,
+  type PdfPageBarcode,
+  type PdfProgressPhase,
 } from '@/features/pdf-import/parsePdf'
 import type { CardSource, Ticket } from '@/shared/db/types'
 
@@ -32,6 +34,22 @@ interface PreviewState {
   rawText: string
   /** Only set in PDF mode. */
   numPages?: number
+  ocrUsed?: boolean
+  perPageBarcodes?: PdfPageBarcode[]
+}
+
+interface ParseProgress {
+  current: number
+  total: number
+  phase: PdfProgressPhase
+}
+
+const PHASE_LABELS: Record<PdfProgressPhase, string> = {
+  load: 'Chargement du module PDF',
+  'extract-text': 'Lecture du texte',
+  render: 'Rendu de la page',
+  ocr: 'Lecture OCR',
+  barcode: 'Code-barres',
 }
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
@@ -52,6 +70,7 @@ export function Import() {
   const [pkpassError, setPkpassError] = useState<string | null>(null)
   const [pdfFile, setPdfFile] = useState<File | null>(null)
   const [parsing, setParsing] = useState(false)
+  const [progress, setProgress] = useState<ParseProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [preview, setPreview] = useState<PreviewState | null>(null)
   const pkpassRef = useRef<HTMLInputElement>(null)
@@ -81,6 +100,7 @@ export function Import() {
   const onParse = async (): Promise<void> => {
     setError(null)
     setPreview(null)
+    setProgress(null)
     setParsing(true)
     try {
       if (mode === 'email') {
@@ -103,15 +123,17 @@ export function Import() {
           setError('Choisis un PDF.')
           return
         }
-        const pdf = await parsePdfFile(pdfFile)
+        const pdf = await parsePdfFile(pdfFile, {
+          onProgress: (current, total, phase) =>
+            setProgress({ current, total, phase }),
+        })
         console.info(
-          `[walleo] PDF parsed: ${pdf.numPages} pages, ${pdf.text.length} chars text, ${pdf.attachments.length} attachments`,
+          `[walleo] PDF parsed: ${pdf.numPages} pages, ${pdf.text.length} chars text, ${pdf.attachments.length} attachments, ocrUsed=${pdf.ocrUsed}, ${pdf.perPageBarcodes.length} barcodes`,
         )
         const result = parseEventText(pdf.text)
         console.info(
           `[walleo] Heuristics: provider=${result.provider}, ${result.tickets.length} tickets, event=${JSON.stringify(result.event)}`,
         )
-        // Use the first detected pkpass attachment, if any
         const pkpassAtt = pdf.attachments.find((a) => a.isPkpass)
         setPreview({
           result,
@@ -119,6 +141,8 @@ export function Import() {
           pkpassBlob: pkpassAtt?.blob,
           rawText: pdf.text,
           numPages: pdf.numPages,
+          ocrUsed: pdf.ocrUsed,
+          perPageBarcodes: pdf.perPageBarcodes,
         })
       }
     } catch (e) {
@@ -126,28 +150,52 @@ export function Import() {
       setError(
         e instanceof Error
           ? `Échec de l'analyse : ${e.message}`
-          : 'Erreur d\'analyse.',
+          : "Erreur d'analyse.",
       )
     } finally {
+      setProgress(null)
       setParsing(false)
     }
   }
 
   const onConfirm = (): void => {
     if (!preview) return
-    const { result, source, pkpassBlob: pkpass } = preview
+    const { result, source, pkpassBlob: pkpass, perPageBarcodes } = preview
 
-    // Convert ParsedTickets → Ticket[]; keep at least one ticket so event
-    // mode in CardForm has something to show.
-    const tickets: Ticket[] = result.tickets.length
-      ? result.tickets.map((t, i) => ({
+    // Build the ticket list. Priority order:
+    //   1. perPageBarcodes from PDF render+OCR fallback — each PDF page
+    //      that yielded a barcode becomes one ticket. Holder/seat are
+    //      filled from the heuristics if a parsed ticket exists at the
+    //      same index.
+    //   2. parseEventText heuristics on the raw text — when the text
+    //      layer worked.
+    //   3. pkpass-only ticket — if we have a Wallet pass but no barcode.
+    const tickets: Ticket[] = (() => {
+      if (perPageBarcodes && perPageBarcodes.length > 0) {
+        return perPageBarcodes.map((bc, i) => {
+          const meta = result.tickets[i]
+          return {
+            id: nanoid(),
+            barcodeFormat: bc.format,
+            barcodeValue: bc.value,
+            holderName: meta?.holderName,
+            seat: meta?.seat,
+            ...(i === 0 && pkpass
+              ? {
+                  hasOriginalPkpass: true,
+                  originalPkpassBlob: pkpass,
+                }
+              : {}),
+          }
+        })
+      }
+      if (result.tickets.length > 0) {
+        return result.tickets.map((t, i) => ({
           id: nanoid(),
           barcodeFormat: t.barcodeFormat ?? 'NONE',
           barcodeValue: t.barcodeValue ?? '',
           holderName: t.holderName,
           seat: t.seat,
-          // Attach the pkpass to the FIRST ticket only — Wallet only needs
-          // one re-import; if multiple, the user can attach them later.
           ...(i === 0 && pkpass
             ? {
                 hasOriginalPkpass: true,
@@ -155,17 +203,20 @@ export function Import() {
               }
             : {}),
         }))
-      : pkpass
-        ? [
-            {
-              id: nanoid(),
-              barcodeFormat: 'NONE',
-              barcodeValue: '',
-              hasOriginalPkpass: true,
-              originalPkpassBlob: pkpass,
-            },
-          ]
-        : []
+      }
+      if (pkpass) {
+        return [
+          {
+            id: nanoid(),
+            barcodeFormat: 'NONE' as const,
+            barcodeValue: '',
+            hasOriginalPkpass: true,
+            originalPkpassBlob: pkpass,
+          },
+        ]
+      }
+      return []
+    })()
 
     navigate('/add', {
       state: {
@@ -314,7 +365,9 @@ export function Import() {
           {parsing ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Analyse en cours…
+              {progress
+                ? `${PHASE_LABELS[progress.phase]} ${progress.current}/${progress.total}…`
+                : 'Analyse en cours…'}
             </>
           ) : (
             <>Analyser</>
