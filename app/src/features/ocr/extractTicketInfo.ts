@@ -78,14 +78,25 @@ export async function createOcrSession(): Promise<OcrSession> {
   }
 
   // Self-hosted assets — no external CDN. Worker, core wasm and language
-  // packs are all served from /tesseract/ on our own origin (copied into
+  // packs are all served from <origin>/tesseract/ (copied into
   // app/public/tesseract/ at build time).
+  //
+  // IMPORTANT: pass FULL absolute URLs. Tesseract.js v5 spawns its
+  // worker via a blob: URL; relative paths inside that blob context
+  // don't resolve against the parent origin and the inner fetches
+  // fail with a generic "NetworkError: Load failed".
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : ''
+  const tesseractBase = `${origin}/tesseract`
+
   let worker: Awaited<ReturnType<typeof createWorker>>
   try {
     worker = await createWorker(['fra', 'eng'], 1, {
-      workerPath: '/tesseract/worker.min.js',
-      corePath: '/tesseract',
-      langPath: '/tesseract',
+      workerPath: `${tesseractBase}/worker.min.js`,
+      corePath: tesseractBase,
+      langPath: tesseractBase,
       gzip: false,
     })
   } catch (err) {
