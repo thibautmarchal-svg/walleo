@@ -6,7 +6,6 @@
   "framework": null,
   "rewrites": [
     {
-      "comment": "SPA fallback for React Router. EXCLUDE /tesseract/* — if a Tesseract sub-resource (e.g. .gz variant) is missing, Vercel must return a real 404 so Tesseract can fallback to the uncompressed file. Without the exclusion the rewrite serves index.html with 200, Tesseract tries to unzip HTML and crashes with NetworkError: Load failed.",
       "source": "/((?!tesseract/).*)",
       "destination": "/index.html"
     }
