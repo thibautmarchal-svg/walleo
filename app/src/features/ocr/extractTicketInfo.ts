@@ -44,27 +44,69 @@ export interface OcrSession {
   terminate(): Promise<void>
 }
 
+function describeError(e: unknown): string {
+  if (e instanceof Error) {
+    return (
+      e.message ||
+      e.name ||
+      e.constructor.name ||
+      Object.prototype.toString.call(e)
+    )
+  }
+  if (e === null || e === undefined) return String(e)
+  if (typeof e === 'string') return e || '<empty>'
+  if (typeof e === 'object') {
+    try {
+      return JSON.stringify(e) || Object.prototype.toString.call(e)
+    } catch {
+      return Object.prototype.toString.call(e)
+    }
+  }
+  return String(e)
+}
+
 export async function createOcrSession(): Promise<OcrSession> {
-  const { createWorker, PSM } = await import('tesseract.js')
+  let createWorker: typeof import('tesseract.js')['createWorker']
+  let PSM: typeof import('tesseract.js')['PSM']
+  try {
+    const mod = await import('tesseract.js')
+    createWorker = mod.createWorker
+    PSM = mod.PSM
+  } catch (err) {
+    console.error('[walleo] tesseract.js import failed', err)
+    throw new Error(`[tesseract-import] ${describeError(err)}`)
+  }
+
   // Self-hosted assets — no external CDN. Worker, core wasm and language
   // packs are all served from /tesseract/ on our own origin (copied into
   // app/public/tesseract/ at build time).
-  const worker = await createWorker(['fra', 'eng'], 1, {
-    workerPath: '/tesseract/worker.min.js',
-    corePath: '/tesseract',
-    langPath: '/tesseract',
-    gzip: false,
-  })
+  let worker: Awaited<ReturnType<typeof createWorker>>
+  try {
+    worker = await createWorker(['fra', 'eng'], 1, {
+      workerPath: '/tesseract/worker.min.js',
+      corePath: '/tesseract',
+      langPath: '/tesseract',
+      gzip: false,
+    })
+  } catch (err) {
+    console.error('[walleo] Tesseract createWorker failed', err)
+    throw new Error(`[tesseract-worker] ${describeError(err)}`)
+  }
 
   // PSM 6 = "Assume a single uniform block of text" — the right mode for
   // ticket photos (most of the surface is text, no columns to separate).
   // preserve_interword_spaces helps keep "Bloc A12 Rang 14 Place 22"
   // from collapsing into a single token.
-  await worker.setParameters({
-    tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
-    preserve_interword_spaces: '1',
-    user_defined_dpi: '300',
-  })
+  try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
+      preserve_interword_spaces: '1',
+      user_defined_dpi: '300',
+    })
+  } catch (err) {
+    console.error('[walleo] Tesseract setParameters failed', err)
+    throw new Error(`[tesseract-params] ${describeError(err)}`)
+  }
 
   return {
     async recognize(blob) {

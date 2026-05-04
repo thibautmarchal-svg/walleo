@@ -252,15 +252,10 @@ async function renderAndScan(
     )
   }
 
-  let session: Awaited<ReturnType<typeof createOcrSessionFn>>
-  try {
-    session = await createOcrSessionFn()
-  } catch (err) {
-    console.error('[walleo] Tesseract createOcrSession failed', err)
-    throw new Error(
-      `[tesseract-init] ${err instanceof Error ? err.message || err.name : String(err)}`,
-    )
-  }
+  // createOcrSessionFn already wraps its own steps with [tesseract-import] /
+  // [tesseract-worker] / [tesseract-params] labels — let those propagate
+  // unchanged so the user sees exactly which step failed.
+  const session = await createOcrSessionFn()
 
   const hints = new Map<number, unknown>()
   hints.set(zxingLib.DecodeHintType.TRY_HARDER, true)
