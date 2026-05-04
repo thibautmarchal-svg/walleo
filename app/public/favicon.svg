@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- App icon : carré PLEIN noir + W formé de deux cartes.
-       rx=0 (full bleed) — iOS / Android launchers apply their own
-       rounded mask, so any rx here would create a visible double-round
-       artifact (white corners showing the wallpaper). -->
+  <!-- App icon : full-bleed black square with the W card icon AND
+       the "Walleo" wordmark stacked vertically. iOS / Android apply
+       their own rounded mask, so rx=0 (square) avoids the visible
+       wallpaper gap that a pre-rounded SVG would leave. -->
   <defs>
     <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#FFE65A"/>
@@ -10,23 +10,33 @@
     </linearGradient>
   </defs>
 
-  <!-- Fond plein noir (sans gradient, sans coin arrondi) -->
+  <!-- Fond plein noir -->
   <rect width="512" height="512" fill="#0A0A0A"/>
 
-  <!-- Carte arrière (rotation -8°) -->
-  <g transform="translate(256 256) rotate(-8) translate(-110 -130)">
-    <rect x="0" y="0" width="220" height="260" rx="28" fill="#FFD60A" opacity="0.35"/>
+  <!-- W card icon, centered upper-half -->
+  <g transform="translate(256 196)">
+    <!-- Back card -->
+    <g transform="rotate(-8) translate(-90 -106)">
+      <rect width="180" height="212" rx="24" fill="#FFD60A" opacity="0.35"/>
+    </g>
+    <!-- Front card + W -->
+    <g transform="rotate(6) translate(-90 -106)">
+      <rect width="180" height="212" rx="24" fill="url(#cardGrad)"/>
+      <path d="M 40 72 L 65 162 L 90 106 L 115 162 L 140 72"
+            fill="none"
+            stroke="#0A0A0A"
+            stroke-width="18"
+            stroke-linecap="round"
+            stroke-linejoin="round"/>
+    </g>
   </g>
 
-  <!-- Carte avant (rotation +6°) avec W découpé -->
-  <g transform="translate(256 256) rotate(6) translate(-110 -130)">
-    <rect x="0" y="0" width="220" height="260" rx="28" fill="url(#cardGrad)"/>
-    <!-- W stylisé sur la carte -->
-    <path d="M 50 90 L 80 200 L 110 130 L 140 200 L 170 90"
-          fill="none"
-          stroke="#0A0A0A"
-          stroke-width="22"
-          stroke-linecap="round"
-          stroke-linejoin="round"/>
-  </g>
+  <!-- Wordmark "Walleo" -->
+  <text x="256" y="450"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif"
+        font-size="86"
+        font-weight="700"
+        letter-spacing="-3"
+        fill="#FAFAFA"
+        text-anchor="middle">Walleo</text>
 </svg>
