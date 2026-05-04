@@ -3,8 +3,27 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
+import { execSync } from 'node:child_process'
+
+// Git short hash of the current commit, captured at build time.
+// Falls back to 'dev' when running outside a git workdir (rare in CI).
+const BUILD_HASH = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+  } catch {
+    return 'dev'
+  }
+})()
+
+const BUILD_DATE = new Date().toISOString().slice(0, 10)
 
 export default defineConfig({
+  define: {
+    __BUILD_HASH__: JSON.stringify(BUILD_HASH),
+    __BUILD_DATE__: JSON.stringify(BUILD_DATE),
+  },
   plugins: [
     react(),
     tailwindcss(),

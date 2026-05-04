@@ -239,7 +239,11 @@ export function Settings() {
         )}
 
         <p className="text-center text-[11px] text-muted-foreground">
-          Walleo · 100 % local · v0.1
+          Walleo · 100 % local
+          <br />
+          <span className="font-mono">
+            build {__BUILD_HASH__} · {__BUILD_DATE__}
+          </span>
         </p>
       </main>
 

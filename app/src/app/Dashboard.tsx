@@ -74,6 +74,12 @@ export function Dashboard() {
           <div className="flex items-center gap-2">
             <Wallet className="h-6 w-6 text-walleo-yellow" />
             <h1 className="text-xl font-bold tracking-tight">Walleo</h1>
+            <span
+              className="ml-1 rounded-full bg-secondary px-2 py-0.5 font-mono text-[9px] text-muted-foreground"
+              title={`Build ${__BUILD_DATE__}`}
+            >
+              {__BUILD_HASH__}
+            </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground">
