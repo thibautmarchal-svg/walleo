@@ -27,6 +27,11 @@ interface PreviewState {
   result: ParseResult
   source: CardSource
   pkpassBlob?: Blob
+  /** Raw text fed into the parser — exposed via a debug toggle so the
+   *  user can see exactly what pdfjs / the email body produced. */
+  rawText: string
+  /** Only set in PDF mode. */
+  numPages?: number
 }
 
 const PROVIDER_LABELS: Record<ProviderId, string> = {
@@ -84,20 +89,36 @@ export function Import() {
           return
         }
         const result = parseEventText(emailText)
-        setPreview({ result, source: 'email', pkpassBlob })
+        console.info(
+          `[walleo] Email parsed: ${emailText.length} chars, provider=${result.provider}, ${result.tickets.length} tickets`,
+        )
+        setPreview({
+          result,
+          source: 'email',
+          pkpassBlob,
+          rawText: emailText,
+        })
       } else {
         if (!pdfFile) {
           setError('Choisis un PDF.')
           return
         }
         const pdf = await parsePdfFile(pdfFile)
+        console.info(
+          `[walleo] PDF parsed: ${pdf.numPages} pages, ${pdf.text.length} chars text, ${pdf.attachments.length} attachments`,
+        )
         const result = parseEventText(pdf.text)
+        console.info(
+          `[walleo] Heuristics: provider=${result.provider}, ${result.tickets.length} tickets, event=${JSON.stringify(result.event)}`,
+        )
         // Use the first detected pkpass attachment, if any
         const pkpassAtt = pdf.attachments.find((a) => a.isPkpass)
         setPreview({
           result,
           source: 'pdf',
           pkpassBlob: pkpassAtt?.blob,
+          rawText: pdf.text,
+          numPages: pdf.numPages,
         })
       }
     } catch (e) {
@@ -432,6 +453,17 @@ function Preview({
           ))}
         </div>
       )}
+
+      <details className="mt-3">
+        <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+          Voir le texte extrait ({preview.rawText.length} caractères
+          {preview.numPages !== undefined ? `, ${preview.numPages} pages` : ''})
+        </summary>
+        <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-secondary/50 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+          {preview.rawText.trim() ||
+            "(aucun texte — ce PDF est peut-être une image scannée sans couche de texte)"}
+        </pre>
+      </details>
 
       <button
         type="button"
