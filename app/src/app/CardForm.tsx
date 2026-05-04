@@ -337,8 +337,18 @@ export function CardForm({ mode }: CardFormProps) {
             }))
           }
         }
-      } catch {
-        // Tesseract failed to initialize entirely — skip OCR
+      } catch (err) {
+        console.warn('[walleo] Tesseract init failed', err)
+        // Surface the failure to every ticket so the user sees what went
+        // wrong instead of just silently missing the auto-fill.
+        const reason = err instanceof Error ? err.message : String(err)
+        setOcrDebug((prev) => {
+          const next = { ...prev }
+          for (const d of decoded) {
+            next[d.ticket.id] = `[Tesseract n'a pas pu démarrer : ${reason}]`
+          }
+          return next
+        })
       } finally {
         await session?.terminate().catch(() => {})
       }

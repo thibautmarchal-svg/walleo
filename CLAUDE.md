@@ -79,6 +79,17 @@ la description de l'agent. Liste : `frontend-pwa-dev`, `ux-designer`,
 - **Phase 3** : plein écran luminosité max, ré-export `.pkpass` Apple Wallet
 - **Phase 4** : tests E2E, audit sécurité, déploiement Netlify
 
+## TODO Phase 4 — vraiment 100% local
+
+- **Self-host Tesseract.js assets** : aujourd'hui Tesseract télécharge son
+  worker, son core wasm et les language packs (fra/eng) depuis
+  `cdn.jsdelivr.net` + `tessdata.projectnaptha.com`. La CSP les autorise
+  explicitement. Pour respecter "aucune donnée ne quitte l'appareil"
+  jusqu'au bout, copier ces assets dans `public/tesseract/` au build et
+  configurer `createWorker({ workerPath, corePath, langPath })` pour
+  pointer en local. ~10 MB de plus dans le bundle PWA mais c'est offline
+  et zéro CDN.
+
 ## À NE PAS faire
 
 - Ajouter un backend, une auth, un service externe.
