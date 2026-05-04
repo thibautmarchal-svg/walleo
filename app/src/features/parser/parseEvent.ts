@@ -352,13 +352,34 @@ function extractOrganizer(
 }
 
 const METADATA_LINE_RE =
-  /^(?:bloc|block|carré|catégorie|cat\.|section|rang|row|siège|seat|place|date|heure|hour|email|commande|order|n°|number|client|barcode|code|qr|tax|prix|price|tva|vat|total|montant|amount|réf|ref|address|adresse|tel|tél|phone|tickets?|billet|admission|au\s+nom\s+de|holder|titulaire|porteur|passenger|votre\s+commande|order\s+number|customer)\b/i
+  /^(?:bloc|block|carré|catégorie|cat\.|section|rang|row|siège|seat|place|date|heure|hour|email|commande|order|n°|number|client|barcode|code|qr|tax|prix|price|tva|vat|total|montant|amount|réf|ref|address|adresse|tel|tél|phone|tickets?|billet|admission|au\s+nom\s+de|holder|titulaire|porteur|passenger|votre\s+commande|order\s+number|customer|assis\s+numéroté)\b/i
+
+/** iOS / Android status bar line at the top of a screenshot:
+ *  "21:09 4    «1! 7 ED" / "100%" / "9:41 AM" / etc. */
+const STATUS_BAR_RE = /^\d{1,2}:\d{2}|\b\d{1,3}\s*%/
+
+/** Common in-app UI labels we don't want to confuse with the event title */
+const UI_LABEL_RE =
+  /^(?:Aide|Help|Continuer|Continue|Suivant|Next|Annuler|Cancel|Bas|Beneden|Haut|Boven|Terminer|Done|Fermer|Close|Ajouter\s+à|Add\s+to|Retour|Back|Partager|Share|de\s+\d+|\d+\s+de\s+\d+)\b/i
+
+function lineContainsDate(line: string): boolean {
+  if (
+    /\b\d{1,2}\s+(?:janvier|janv\.?|février|fevrier|févr\.?|fevr\.?|mars|avril|avr\.?|mai|juin|juillet|juil\.?|août|aout|septembre|sept\.?|octobre|oct\.?|novembre|nov\.?|décembre|decembre|déc\.?|dec\.?)\s+\d{4}/i.test(
+      line,
+    )
+  )
+    return true
+  if (/\b\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}\b/.test(line)) return true
+  return false
+}
 
 function extractEventName(
   text: string,
   provider: ProviderId,
 ): string | undefined {
-  // Provider-specific: "Vous allez voir : XXX" or "Concert: XXX"
+  void provider
+
+  // 1. Provider-specific: "Vous allez voir : XXX" or "Concert: XXX"
   const labelled =
     /(?:Vous\s+allez\s+(?:voir|assister\s+à)|Spectacle|Concert|Événement|Event|Show|Match)\s*[:—-]?\s*([^\n\r]{4,80})/i.exec(
       text,
@@ -368,24 +389,44 @@ function extractEventName(
     if (cleaned.length >= 4) return cleaned
   }
 
-  // Generic: longest line that looks like a title
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
-    .filter((l) => l.length > 5)
+    .filter((l) => l.length >= 5 && l.length <= 100)
 
-  const candidates = lines.filter(
+  const cleanLines = lines.filter(
     (l) =>
       !METADATA_LINE_RE.test(l) &&
-      /[A-Z]/.test(l) &&
-      !/^\d+[\s\d:./-]*$/.test(l) &&
+      !STATUS_BAR_RE.test(l) &&
+      !UI_LABEL_RE.test(l) &&
+      !lineContainsDate(l) &&
       !/@/.test(l) &&
-      !/^(www\.|http|de\s|à\s|cher|bonjour|hello|hi\s)/i.test(l) &&
-      l.length <= 80,
+      !/^(?:www\.|http)/i.test(l),
+  )
+
+  // 2. "Artist - Title" pattern — very common on event tickets, scan
+  //    each line. Both halves must start with a capital letter and
+  //    contain only letters / spaces / apostrophes.
+  const titleRe =
+    /([\p{Lu}][\p{L}'-]+(?:\s+[\p{L}'-]+){0,5})\s+[-–—]\s+([\p{Lu}][\p{L}'-]+(?:\s+[\p{L}'-]+){0,8})/u
+  for (const line of cleanLines) {
+    const m = titleRe.exec(line)
+    if (m?.[1] && m[2]) {
+      const left = m[1].trim()
+      const right = m[2].trim()
+      if (left.length >= 2 && right.length >= 2) {
+        return `${left} - ${right}`
+      }
+    }
+  }
+
+  // 3. Fallback — longest title-case line that's not metadata, status,
+  //    UI, or a date line.
+  const candidates = cleanLines.filter(
+    (l) => /[A-Z]/.test(l) && !/^\d+[\s\d:./-]*$/.test(l),
   )
 
   candidates.sort((a, b) => b.length - a.length)
-  void provider
   return candidates[0]
 }
 
@@ -437,18 +478,26 @@ function parseTicketBlock(block: string, provider: ProviderId): ParsedTicket {
 }
 
 function extractSeat(text: string): string | undefined {
-  // Tolerate OCR artifacts: leading punctuation noise, weird quotes, and
-  // arbitrary whitespace between label and value.
+  // 0. Belgian Ticketmaster columnar layout: a "SECTION RANGÉE SIÈGE"
+  //    header followed by values laid out in columns. OCR linearizes
+  //    columns into rows, so we read positionally instead of by label.
+  const columnar = extractColumnarVenuePlace(text)
+  if (columnar) return columnar
+
+  // 1. Tolerate OCR artifacts: leading punctuation noise, weird quotes,
+  //    and arbitrary whitespace between label and value. The captured
+  //    value must end on a word boundary — otherwise `RANGÉE  SIÈGE`
+  //    would capture the S of SIÈGE as the row letter.
   const blocM =
-    /(?:^|\s|[.,:;])(?:Bloc(?:k)?|Carré|Section|Catégorie|Cat\.?|Cat[ée]g\.?)\s*[:°#]?\s*([A-Z]?\d+[A-Z]?)/i.exec(
+    /(?:^|\s|[.,:;])(?:Bloc(?:k)?|Carré|Section|Catégorie|Cat\.?|Cat[ée]g\.?)\s*[:°#]?\s*([A-Z]?\d+[A-Z]?)\b/i.exec(
       text,
     )
   const rangM =
-    /(?:^|\s|[.,:;])(?:Rang(?:ée)?|Row|Ligne)\s*[:°#]?\s*(\d+|[A-Z])/i.exec(
+    /(?:^|\s|[.,:;])(?:Rang(?:ée)?|Row|Ligne)\s*[:°#]?\s*(\d+|[A-Z])(?=\W|$)/i.exec(
       text,
     )
   const seatM =
-    /(?:^|\s|[.,:;])(?:Siège|Sieg|Seat|Place(?:\s+n°)?|Numéro\s+de\s+place|Seat\s+no|N°\s*de\s*place)\s*[:°#]?\s*(\d+)/i.exec(
+    /(?:^|\s|[.,:;])(?:Siège|Sieg|Seat|Place(?:\s+n°)?|Numéro\s+de\s+place|Seat\s+no|N°\s*de\s*place)\s*[:°#]?\s*(\d+)\b/i.exec(
       text,
     )
 
@@ -484,6 +533,67 @@ function extractSeat(text: string): string | undefined {
   }
 
   return undefined
+}
+
+/**
+ * Belgian Ticketmaster (and similar) layouts:
+ *
+ *     SECTION        RANGÉE         SIÈGE
+ *     Parterre
+ *     14            271
+ *     A
+ *
+ * After OCR the columns are linearized into rows; we use the header line
+ * as an anchor, then read the next ~6 lines positionally:
+ *   - first known section keyword (Parterre / Orchestre / Balcon / …)
+ *   - first capital-letter line on its own = sub-section letter
+ *   - first two numbers in document order: row, then seat
+ */
+function extractColumnarVenuePlace(text: string): string | undefined {
+  const headerRe =
+    /(?:^|\n).{0,5}(?:SECTION|SECTEUR)[ \t]+(?:RANG[ÉE]+E?|ROW)[ \t]+(?:SIÈGE|SEAT|PLACE)[^\n]*\n/i
+  const headerMatch = headerRe.exec(text)
+  if (!headerMatch) return undefined
+
+  const headerEnd = headerMatch.index + headerMatch[0].length
+  const chunk = text.slice(headerEnd, headerEnd + 250)
+  const lines = chunk
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .slice(0, 8)
+
+  const sectionRe =
+    /\b(Parterre|Orchestre|Balcon|Corbeille|Mezzanine|Loge|Carré|Tribune|Pelouse|Fosse|Carre)\b/i
+  let section: string | undefined
+  for (const line of lines) {
+    const m = sectionRe.exec(line)
+    if (m?.[1]) {
+      section = m[1]
+      break
+    }
+  }
+
+  // Sub-section letter: a line that's just a single uppercase letter
+  const subLetter = lines.find((l) => /^[A-Z]$/.test(l))
+
+  // First two numbers in document order
+  const numbers: string[] = []
+  for (const line of lines) {
+    const ms = [...line.matchAll(/\b(\d{1,4})\b/g)]
+    for (const m of ms) {
+      if (m[1]) numbers.push(m[1])
+      if (numbers.length >= 2) break
+    }
+    if (numbers.length >= 2) break
+  }
+
+  const parts: string[] = []
+  if (section) parts.push(subLetter ? `${section} ${subLetter}` : section)
+  if (numbers[0]) parts.push(`Rang ${numbers[0]}`)
+  if (numbers[1]) parts.push(`Siège ${numbers[1]}`)
+
+  return parts.length >= 2 ? parts.join(' — ') : undefined
 }
 
 function extractHolderName(text: string): string | undefined {
