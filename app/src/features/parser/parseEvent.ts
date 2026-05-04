@@ -98,10 +98,19 @@ export function detectProvider(text: string): ProviderId {
 
 // ─────────────────────── Public entry point ───────────────────────
 
+function safe<T>(label: string, fn: () => T, fallback: T): T {
+  try {
+    return fn()
+  } catch (err) {
+    console.warn(`[walleo/parser] ${label} failed`, err)
+    return fallback
+  }
+}
+
 export function parseEventText(text: string): ParseResult {
-  const provider = detectProvider(text)
-  const event = extractEvent(text, provider)
-  const tickets = extractTickets(text, provider)
+  const provider = safe('detectProvider', () => detectProvider(text), 'unknown' as ProviderId)
+  const event = safe('extractEvent', () => extractEvent(text, provider), {})
+  const tickets = safe('extractTickets', () => extractTickets(text, provider), [])
   const warnings: string[] = []
 
   // Clean up: if we got NO event metadata AND no tickets, surface a warning
@@ -249,13 +258,20 @@ const PROVIDER_LABELS: Record<ProviderId, string | undefined> = {
 }
 
 function extractDate(text: string): string | undefined {
+  // Strip "Date de commande : <date>" (and English equivalent) — that's
+  // the ORDER date, not the EVENT date. Ticketmaster Belgium prints it
+  // on every PDF page so it would otherwise win.
+  const cleaned = text
+    .replace(/Date\s+de\s+commande\s*:\s*[^\n\r]*/gi, '')
+    .replace(/Order\s+date\s*:\s*[^\n\r]*/gi, '')
+    .replace(/Date\s+d['']achat\s*:\s*[^\n\r]*/gi, '')
   // Accepts both "18 mai 2026" and "ven. 02 avr. 2027 - 20:00"
   const FR_MONTH_RE =
     '(?:janvier|janv\\.?|février|fevrier|févr\\.?|fevr\\.?|mars|avril|avr\\.?|mai|juin|juillet|juil\\.?|août|aout|septembre|sept\\.?|octobre|oct\\.?|novembre|nov\\.?|décembre|decembre|déc\\.?|dec\\.?)'
   const frFull = new RegExp(
     `\\b(\\d{1,2})\\s+(${FR_MONTH_RE})\\s+(\\d{4})(?:[^\\d]{1,15}(\\d{1,2})\\s*[h:.]\\s*(\\d{2}))?`,
     'i',
-  ).exec(text)
+  ).exec(cleaned)
   if (frFull) {
     const [, dStr, monStr, yStr, hStr, miStr] = frFull
     const day = parseInt(dStr ?? '0', 10)
@@ -270,7 +286,7 @@ function extractDate(text: string): string | undefined {
 
   const enFull =
     /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\.?\s+(\d{1,2}),?\s+(\d{4})(?:[^\d]{1,12}(\d{1,2}):?(\d{2})?\s*(am|pm)?)?/i.exec(
-      text,
+      cleaned,
     )
   if (enFull) {
     const [, monStr, dStr, yStr, hStr, miStr, ampm] = enFull
@@ -286,7 +302,7 @@ function extractDate(text: string): string | undefined {
   }
 
   const numeric =
-    /\b(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})(?:[^\d]{1,12}(\d{1,2}):(\d{2}))?/.exec(text)
+    /\b(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})(?:[^\d]{1,12}(\d{1,2}):(\d{2}))?/.exec(cleaned)
   if (numeric) {
     const [, dStr, monStr, yStr, hStr, miStr] = numeric
     const day = parseInt(dStr ?? '0', 10)
@@ -404,7 +420,15 @@ function extractEventName(
       !/^(?:www\.|http)/i.test(l),
   )
 
-  // 2. "Artist - Title" pattern — very common on event tickets, scan
+  // 2. "<Event Name 20YY> | <Pass Type>" — Ticketmaster Belgium prints
+  //    e.g. "Les Solidarités 2026 | Pass 3 jours" on its own line.
+  for (const line of cleanLines) {
+    if (!line.includes('|')) continue
+    if (!/\b20\d{2}\b/.test(line)) continue
+    if (line.length >= 8 && line.length <= 100) return line
+  }
+
+  // 3. "Artist - Title" pattern — very common on event tickets, scan
   //    each line. Both halves must start with a capital letter and
   //    contain only letters / spaces / apostrophes.
   const titleRe =
@@ -450,12 +474,19 @@ function extractTickets(text: string, provider: ProviderId): ParsedTicket[] {
 const TICKET_HEADER_RE =
   /^(?:Billet|Ticket|Pass|Place|E[-\s]?ticket)\s*(?:n°|#|N\.?\s*°?|n)?\s*\d{1,3}\s*(?:\/\s*\d{1,3})?(?:\s*[-—:].*)?$/im
 
+/** Ticketmaster Belgium prints one of these per ticket page in the
+ *  PDF (GA---NNNNN  ESPxxx  ESP  *REFERENCE*). Used as a per-ticket
+ *  separator for parsing 6-pass-in-one-PDF imports. */
+const TM_BE_TICKET_RE =
+  /^GA[-]+\d{3,}\s+[A-Z][A-Z0-9]{1,10}\s+[A-Z]{1,5}\s+\*[^*\s][^*]{2,30}\*\s*$/m
+
 function splitIntoTicketBlocks(text: string): string[] {
   const lines = text.split(/\r?\n/)
   const indices: number[] = []
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i]
-    if (l !== undefined && TICKET_HEADER_RE.test(l)) indices.push(i)
+    if (l === undefined) continue
+    if (TICKET_HEADER_RE.test(l) || TM_BE_TICKET_RE.test(l)) indices.push(i)
   }
   if (indices.length < 2) return []
 
@@ -588,12 +619,17 @@ function extractColumnarVenuePlace(text: string): string | undefined {
     if (numbers.length >= 2) break
   }
 
+  // Require at least a recognized section keyword — otherwise we'd
+  // happily emit "Rang 13 — Siège 2025" by picking up the order date
+  // and customer numbers from a Ticketmaster header table.
+  if (!section) return undefined
+
   const parts: string[] = []
-  if (section) parts.push(subLetter ? `${section} ${subLetter}` : section)
+  parts.push(subLetter ? `${section} ${subLetter}` : section)
   if (numbers[0]) parts.push(`Rang ${numbers[0]}`)
   if (numbers[1]) parts.push(`Siège ${numbers[1]}`)
 
-  return parts.length >= 2 ? parts.join(' — ') : undefined
+  return parts.length >= 1 ? parts.join(' — ') : undefined
 }
 
 function extractHolderName(text: string): string | undefined {
@@ -607,6 +643,9 @@ function extractHolderName(text: string): string | undefined {
     new RegExp(`Holder(?:'s)?\\s+name\\s*:?\\s*(${namePart}|${upperName})`, 'i'),
     new RegExp(`Nom\\s*(?:du)?\\s*(?:porteur|titulaire)\\s*:?\\s*(${namePart}|${upperName})`, 'i'),
     new RegExp(`Passenger\\s*:?\\s*(${namePart}|${upperName})`, 'i'),
+    // Ticketmaster Belgium PDF layout: "<First Last> Numéro de commande :"
+    // (the customer name sits right above the order header row)
+    new RegExp(`(${namePart})\\s+Numéro\\s+(?:de\\s+)?commande`, ''),
     new RegExp(`(?:Mr|Mrs|Mme|M\\.|Mlle)\\.?\\s+(${namePart}|${upperName})`),
   ]
   for (const re of patterns) {

@@ -101,7 +101,12 @@ export function Import() {
         })
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur d\'analyse.')
+      console.error('[walleo] Import parse failed', e)
+      setError(
+        e instanceof Error
+          ? `Échec de l'analyse : ${e.message}`
+          : 'Erreur d\'analyse.',
+      )
     } finally {
       setParsing(false)
     }
