@@ -155,6 +155,14 @@ export function CardDetail() {
   )
 }
 
+/** bwip-js renders the human-readable text under EAN13/CODE128 itself
+ *  (we set `includetext: true` for those). For QR/Aztec/PDF417 there's
+ *  no such inline text, so we duplicate the value below. */
+const FORMATS_WITH_INLINE_TEXT: ReadonlyArray<Ticket['barcodeFormat']> = [
+  'EAN13',
+  'CODE128',
+]
+
 function SingleBarcode({
   format,
   value,
@@ -162,13 +170,16 @@ function SingleBarcode({
   format: Ticket['barcodeFormat']
   value: string
 }) {
+  const showText = !FORMATS_WITH_INLINE_TEXT.includes(format) && value
   return (
     <div className="w-full max-w-md px-5">
       <div className="rounded-3xl bg-white p-6 shadow-[0_2px_24px_rgba(0,0,0,0.08)]">
         <Barcode format={format} value={value} className="flex justify-center" />
-        <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
-          {value}
-        </p>
+        {showText && (
+          <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
+            {value}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -250,11 +261,12 @@ function TicketSwiper({ tickets, onExportPkpass }: TicketSwiperProps) {
                 value={t.barcodeValue}
                 className="flex justify-center"
               />
-              {t.barcodeValue && (
-                <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
-                  {t.barcodeValue}
-                </p>
-              )}
+              {t.barcodeValue &&
+                !FORMATS_WITH_INLINE_TEXT.includes(t.barcodeFormat) && (
+                  <p className="mt-4 break-all text-center font-mono text-xs text-neutral-500">
+                    {t.barcodeValue}
+                  </p>
+                )}
               {(t.holderName || t.seat) && (
                 <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">
                   {t.holderName && (

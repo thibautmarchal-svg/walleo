@@ -145,20 +145,30 @@ function extractEvent(text: string, provider: ProviderId): ParsedEvent {
 
 const FR_MONTHS: Record<string, number> = {
   janvier: 0,
+  janv: 0,
   février: 1,
   fevrier: 1,
+  févr: 1,
+  fevr: 1,
   mars: 2,
   avril: 3,
+  avr: 3,
   mai: 4,
   juin: 5,
   juillet: 6,
+  juil: 6,
   août: 7,
   aout: 7,
   septembre: 8,
+  sept: 8,
   octobre: 9,
+  oct: 9,
   novembre: 10,
+  nov: 10,
   décembre: 11,
   decembre: 11,
+  déc: 11,
+  dec: 11,
 }
 
 const EN_MONTHS: Record<string, number> = {
@@ -239,14 +249,18 @@ const PROVIDER_LABELS: Record<ProviderId, string | undefined> = {
 }
 
 function extractDate(text: string): string | undefined {
-  const frFull =
-    /\b(\d{1,2})\s+(janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|septembre|octobre|novembre|décembre|decembre)\s+(\d{4})(?:[^\d]{1,12}(\d{1,2})\s*[h:.]\s*(\d{2}))?/i.exec(
-      text,
-    )
+  // Accepts both "18 mai 2026" and "ven. 02 avr. 2027 - 20:00"
+  const FR_MONTH_RE =
+    '(?:janvier|janv\\.?|février|fevrier|févr\\.?|fevr\\.?|mars|avril|avr\\.?|mai|juin|juillet|juil\\.?|août|aout|septembre|sept\\.?|octobre|oct\\.?|novembre|nov\\.?|décembre|decembre|déc\\.?|dec\\.?)'
+  const frFull = new RegExp(
+    `\\b(\\d{1,2})\\s+(${FR_MONTH_RE})\\s+(\\d{4})(?:[^\\d]{1,15}(\\d{1,2})\\s*[h:.]\\s*(\\d{2}))?`,
+    'i',
+  ).exec(text)
   if (frFull) {
     const [, dStr, monStr, yStr, hStr, miStr] = frFull
     const day = parseInt(dStr ?? '0', 10)
-    const month = FR_MONTHS[(monStr ?? '').toLowerCase()] ?? 0
+    const monKey = (monStr ?? '').toLowerCase().replace(/\.$/, '')
+    const month = FR_MONTHS[monKey] ?? 0
     const year = parseInt(yStr ?? '0', 10)
     const hour = hStr ? parseInt(hStr, 10) : 20
     const minute = miStr ? parseInt(miStr, 10) : 0

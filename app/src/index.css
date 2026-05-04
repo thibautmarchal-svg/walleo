@@ -108,6 +108,11 @@ body,
 html {
   color-scheme: dark;
   -webkit-tap-highlight-color: transparent;
+  /* Block pinch-zoom while keeping scroll. `manipulation` also kills the
+   * 300ms double-tap zoom delay on iOS Safari. */
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -120,6 +125,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-y: none;
+  touch-action: pan-x pan-y;
 }
 
 /* iOS safe-area helpers */

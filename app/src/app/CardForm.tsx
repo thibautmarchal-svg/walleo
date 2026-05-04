@@ -309,13 +309,13 @@ export function CardForm({ mode }: CardFormProps) {
           try {
             const info = await session.recognize(item.file)
             ocrResults.push(info)
-            // Stash raw text for the per-ticket debug panel
-            if (info.rawText) {
-              setOcrDebug((prev) => ({
-                ...prev,
-                [item.ticket.id]: info.rawText,
-              }))
-            }
+            // Stash raw text for the per-ticket debug panel — always set,
+            // even if empty, so the user gets a "<vide>" panel instead of
+            // wondering whether OCR ran at all.
+            setOcrDebug((prev) => ({
+              ...prev,
+              [item.ticket.id]: info.rawText ?? '',
+            }))
             // Patch this ticket with per-ticket OCR results
             const patch: Partial<Ticket> = {}
             if (info.holderName) patch.holderName = info.holderName
@@ -327,8 +327,14 @@ export function CardForm({ mode }: CardFormProps) {
                 ),
               )
             }
-          } catch {
-            // OCR failure on one image — skip silently, keep the ticket.
+          } catch (err) {
+            console.warn('[walleo] OCR failed for ticket', item.ticket.id, err)
+            setOcrDebug((prev) => ({
+              ...prev,
+              [item.ticket.id]: `[OCR a échoué : ${
+                err instanceof Error ? err.message : String(err)
+              }]`,
+            }))
           }
         }
       } catch {
@@ -981,13 +987,13 @@ function TicketEditor({
         placeholder="Place / siège"
         className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-walleo-yellow"
       />
-      {ocrRawText && (
+      {ocrRawText !== undefined && (
         <details className="mt-2 group">
           <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
             Voir le texte lu (OCR)
           </summary>
           <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-background/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
-            {ocrRawText.trim() || '(vide)'}
+            {ocrRawText.trim() || '(rien lu — image trop petite, peu contrastée, ou Tesseract n\'a pas tourné)'}
           </pre>
         </details>
       )}
