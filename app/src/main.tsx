@@ -19,6 +19,17 @@ if ('serviceWorker' in navigator) {
   })
 }
 
+// One-shot cleanup of the legacy `tesseract-assets` runtime cache.
+// Older builds runtime-cached every /tesseract/* response with
+// CacheFirst — when the SPA rewrite mistakenly returned index.html
+// (200) for a missing .gz, that HTML got cached forever, and
+// Tesseract kept getting served HTML where it expected a wasm /
+// traineddata blob ("NetworkError: Load failed"). Drop the cache
+// once on next boot so users on the old SW recover automatically.
+if ('caches' in window) {
+  caches.delete('tesseract-assets').catch(() => {})
+}
+
 registerSW({ immediate: true })
 
 createRoot(document.getElementById('root')!).render(
