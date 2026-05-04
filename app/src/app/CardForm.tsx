@@ -191,6 +191,9 @@ export function CardForm({ mode }: CardFormProps) {
     target: 'loyalty' | 'tickets'
   } | null>(null)
   const [cropperOpen, setCropperOpen] = useState(false)
+  /** Raw OCR output captured per ticket id, exposed via the editor's
+   *  "Voir le texte lu" toggle so the user can debug what Tesseract saw. */
+  const [ocrDebug, setOcrDebug] = useState<Record<string, string>>({})
   const loyaltyFileRef = useRef<HTMLInputElement>(null)
   const ticketsFileRef = useRef<HTMLInputElement>(null)
 
@@ -306,6 +309,13 @@ export function CardForm({ mode }: CardFormProps) {
           try {
             const info = await session.recognize(item.file)
             ocrResults.push(info)
+            // Stash raw text for the per-ticket debug panel
+            if (info.rawText) {
+              setOcrDebug((prev) => ({
+                ...prev,
+                [item.ticket.id]: info.rawText,
+              }))
+            }
             // Patch this ticket with per-ticket OCR results
             const patch: Partial<Ticket> = {}
             if (info.holderName) patch.holderName = info.holderName
@@ -773,6 +783,7 @@ export function CardForm({ mode }: CardFormProps) {
                       key={t.id}
                       index={idx}
                       ticket={t}
+                      ocrRawText={ocrDebug[t.id]}
                       onChange={(patch) => updateTicket(t.id, patch)}
                       onRemove={() => removeTicket(t.id)}
                     />
@@ -910,11 +921,18 @@ function ImportSection({
 interface TicketEditorProps {
   index: number
   ticket: Ticket
+  ocrRawText?: string
   onChange: (patch: Partial<Ticket>) => void
   onRemove: () => void
 }
 
-function TicketEditor({ index, ticket, onChange, onRemove }: TicketEditorProps) {
+function TicketEditor({
+  index,
+  ticket,
+  ocrRawText,
+  onChange,
+  onRemove,
+}: TicketEditorProps) {
   return (
     <div className="rounded-xl border border-border bg-secondary/30 p-3">
       <div className="mb-2 flex items-center justify-between">
@@ -963,6 +981,16 @@ function TicketEditor({ index, ticket, onChange, onRemove }: TicketEditorProps) 
         placeholder="Place / siège"
         className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-walleo-yellow"
       />
+      {ocrRawText && (
+        <details className="mt-2 group">
+          <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+            Voir le texte lu (OCR)
+          </summary>
+          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg bg-background/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground">
+            {ocrRawText.trim() || '(vide)'}
+          </pre>
+        </details>
+      )}
     </div>
   )
 }

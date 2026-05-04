@@ -423,14 +423,18 @@ function parseTicketBlock(block: string, provider: ProviderId): ParsedTicket {
 }
 
 function extractSeat(text: string): string | undefined {
+  // Tolerate OCR artifacts: leading punctuation noise, weird quotes, and
+  // arbitrary whitespace between label and value.
   const blocM =
-    /\b(?:Bloc(?:k)?|Carré|Section|Catégorie|Cat\.)\s*[:°#]?\s*([A-Z]?\d+[A-Z]?)/i.exec(
+    /(?:^|\s|[.,:;])(?:Bloc(?:k)?|Carré|Section|Catégorie|Cat\.?|Cat[ée]g\.?)\s*[:°#]?\s*([A-Z]?\d+[A-Z]?)/i.exec(
       text,
     )
   const rangM =
-    /\b(?:Rang(?:ée)?|Row)\s*[:°#]?\s*(\d+|[A-Z])/i.exec(text)
+    /(?:^|\s|[.,:;])(?:Rang(?:ée)?|Row|Ligne)\s*[:°#]?\s*(\d+|[A-Z])/i.exec(
+      text,
+    )
   const seatM =
-    /\b(?:Siège|Seat|Place(?:\s+n°)?|Numéro\s+de\s+place|Seat\s+no)\s*[:°#]?\s*(\d+)/i.exec(
+    /(?:^|\s|[.,:;])(?:Siège|Sieg|Seat|Place(?:\s+n°)?|Numéro\s+de\s+place|Seat\s+no|N°\s*de\s*place)\s*[:°#]?\s*(\d+)/i.exec(
       text,
     )
 
@@ -440,7 +444,9 @@ function extractSeat(text: string): string | undefined {
   if (seatM?.[1]) parts.push(`Siège ${seatM[1]}`)
   if (parts.length > 0) return parts.join(' — ')
 
-  const sncfM = /Voiture\s*(\d+).{0,30}?Place\s*(\d+)/i.exec(text)
+  const sncfM = /Voiture\s*[:°#]?\s*(\d+).{0,40}?Place\s*[:°#]?\s*(\d+)/i.exec(
+    text,
+  )
   if (sncfM) return `Voiture ${sncfM[1]} — Place ${sncfM[2]}`
 
   const theatreM =
