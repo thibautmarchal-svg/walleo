@@ -13,20 +13,20 @@
   <!-- Fond plein noir -->
   <rect width="512" height="512" fill="#0A0A0A"/>
 
-  <!-- W card stack centered. The stack height is ~280px so it sits
-       comfortably inside the iOS rounded mask without touching edges. -->
+  <!-- W card stack centered. Front card is 320×376 — ~63% of the icon
+       width, so the W reads instantly even on Spotlight thumbnails. -->
   <g transform="translate(256 256)">
     <!-- Back card, slight left lean -->
-    <g transform="rotate(-8) translate(-115 -135)">
-      <rect width="230" height="270" rx="32" fill="#FFD60A" opacity="0.35"/>
+    <g transform="rotate(-8) translate(-160 -188)">
+      <rect width="320" height="376" rx="44" fill="#FFD60A" opacity="0.35"/>
     </g>
     <!-- Front card with W -->
-    <g transform="rotate(6) translate(-115 -135)">
-      <rect width="230" height="270" rx="32" fill="url(#cardGrad)"/>
-      <path d="M 50 92 L 82 208 L 115 134 L 148 208 L 180 92"
+    <g transform="rotate(6) translate(-160 -188)">
+      <rect width="320" height="376" rx="44" fill="url(#cardGrad)"/>
+      <path d="M 70 128 L 114 289 L 160 186 L 206 289 L 250 128"
             fill="none"
             stroke="#0A0A0A"
-            stroke-width="23"
+            stroke-width="32"
             stroke-linecap="round"
             stroke-linejoin="round"/>
     </g>
