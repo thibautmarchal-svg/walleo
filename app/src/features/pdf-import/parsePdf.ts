@@ -286,32 +286,13 @@ async function renderAndScan(
           console.warn(`[walleo] OCR page ${i} failed`, err)
         }
 
-        // Barcode
+        // Barcodes — a single PDF page can contain multiple QR / barcodes
+        // (festival pass sheets, group tickets). Decode in a loop, masking
+        // the detected region after each success so zxing finds the next one.
         onProgress?.(i, numPages, 'barcode')
-        try {
-          const url = URL.createObjectURL(blob)
-          try {
-            const img = await loadImageFromUrl(url)
-            const result = await reader.decodeFromImageElement(img)
-            const formatNum = result.getBarcodeFormat()
-            const formatName = (
-              zxingLib.BarcodeFormat as unknown as Record<number, string>
-            )[formatNum]
-            const domainFormat = formatName
-              ? ZXING_TO_DOMAIN[formatName]
-              : undefined
-            if (domainFormat) {
-              let value = result.getText()
-              if (formatName === 'UPC_A' && value.length === 12) {
-                value = '0' + value
-              }
-              barcodes.push({ pageIndex: i, format: domainFormat, value })
-            }
-          } finally {
-            setTimeout(() => URL.revokeObjectURL(url), 0)
-          }
-        } catch {
-          // No barcode decoded on this page
+        const pageBarcodes = decodeAllBarcodesInCanvas(canvas, reader, zxingLib)
+        for (const bc of pageBarcodes) {
+          barcodes.push({ pageIndex: i, format: bc.format, value: bc.value })
         }
       }
 
@@ -324,13 +305,88 @@ async function renderAndScan(
   return { text: allText, barcodes }
 }
 
-function loadImageFromUrl(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('Image PDF non chargée'))
-    img.src = src
-  })
+/**
+ * Decode every barcode visible on the rendered canvas. Strategy:
+ *   - decodeFromCanvas returns the first match
+ *   - paint a white rectangle over its bounding box (computed from
+ *     getResultPoints()) so the next iteration finds the next code
+ *   - repeat up to 10 codes per page (safety cap)
+ *   - de-dupe by value in case the same QR is detected twice through
+ *     marginally different points
+ */
+function decodeAllBarcodesInCanvas(
+  canvas: HTMLCanvasElement,
+  reader: import('@zxing/browser').BrowserMultiFormatReader,
+  lib: typeof import('@zxing/library'),
+): Array<{ format: PdfPageBarcode['format']; value: string }> {
+  const out: Array<{ format: PdfPageBarcode['format']; value: string }> = []
+  const seen = new Set<string>()
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return out
+
+  for (let attempt = 0; attempt < 10; attempt++) {
+    let result: import('@zxing/library').Result | undefined
+    try {
+      result = reader.decodeFromCanvas(canvas)
+    } catch {
+      break
+    }
+    if (!result) break
+
+    const value = result.getText()
+    if (seen.has(value)) {
+      // Same code detected twice — masking failed or no more codes left
+      break
+    }
+    seen.add(value)
+
+    const formatNum = result.getBarcodeFormat()
+    const formatName = (lib.BarcodeFormat as unknown as Record<number, string>)[
+      formatNum
+    ]
+    const domainFormat = formatName ? ZXING_TO_DOMAIN[formatName] : undefined
+    if (domainFormat) {
+      let normalized = value
+      if (formatName === 'UPC_A' && value.length === 12) {
+        normalized = '0' + value
+      }
+      out.push({ format: domainFormat, value: normalized })
+    }
+
+    // Compute bbox from the result's anchor points, then white-out
+    const points = result.getResultPoints()
+    if (!points || points.length === 0) break
+
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const p of points) {
+      if (!p) continue
+      const x = p.getX()
+      const y = p.getY()
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        if (x < minX) minX = x
+        if (y < minY) minY = y
+        if (x > maxX) maxX = x
+        if (y > maxY) maxY = y
+      }
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) break
+
+    // Generous padding so the masked rect covers the whole code (zxing
+    // points are anchor markers, not full corners on 1D codes).
+    const padding = Math.max(40, (maxX - minX) * 0.3, (maxY - minY) * 0.3)
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillRect(
+      minX - padding,
+      minY - padding,
+      maxX - minX + padding * 2,
+      maxY - minY + padding * 2,
+    )
+  }
+
+  return out
 }
 
 function isZipMagic(u8: Uint8Array): boolean {
