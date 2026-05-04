@@ -72,6 +72,7 @@ export function Import() {
   const [parsing, setParsing] = useState(false)
   const [progress, setProgress] = useState<ParseProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [errorLog, setErrorLog] = useState<string[]>([])
   const [preview, setPreview] = useState<PreviewState | null>(null)
   const pkpassRef = useRef<HTMLInputElement>(null)
   const pdfRef = useRef<HTMLInputElement>(null)
@@ -99,6 +100,7 @@ export function Import() {
 
   const onParse = async (): Promise<void> => {
     setError(null)
+    setErrorLog([])
     setPreview(null)
     setProgress(null)
     setParsing(true)
@@ -156,6 +158,13 @@ export function Import() {
             'erreur inconnue'
           : String(e ?? 'erreur inconnue')
       setError(`Échec de l'analyse : ${detail}`)
+      // Pull the Tesseract log buffer if it was populated before the
+      // crash — gives us the exact step (workerPath set, getCore phase,
+      // language download, etc.) without needing DevTools on iPhone.
+      const tessLog = (
+        window as unknown as { __walleoTesseractLog?: string[] }
+      ).__walleoTesseractLog
+      setErrorLog(tessLog ?? [])
     } finally {
       setProgress(null)
       setParsing(false)
@@ -379,9 +388,19 @@ export function Import() {
         </button>
 
         {error && (
-          <p className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {error}
-          </p>
+          <div className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            <p>{error}</p>
+            {errorLog.length > 0 && (
+              <details>
+                <summary className="cursor-pointer text-[11px] opacity-80">
+                  Voir le journal Tesseract ({errorLog.length} étapes)
+                </summary>
+                <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-background/40 p-2 font-mono text-[10px] leading-relaxed">
+                  {errorLog.join('\n')}
+                </pre>
+              </details>
+            )}
+          </div>
         )}
 
         {preview && (

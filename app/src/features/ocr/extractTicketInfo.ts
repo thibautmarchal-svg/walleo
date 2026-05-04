@@ -42,6 +42,9 @@ export interface ExtractedTicketInfo {
 export interface OcrSession {
   recognize(blob: File | Blob): Promise<ExtractedTicketInfo>
   terminate(): Promise<void>
+  /** Tesseract.js progress / status messages collected so far. Surfaced
+   *  in the import preview when something goes wrong. */
+  log: string[]
 }
 
 function describeError(e: unknown): string {
@@ -91,16 +94,39 @@ export async function createOcrSession(): Promise<OcrSession> {
       : ''
   const tesseractBase = `${origin}/tesseract`
 
+  // Capture every Tesseract status / progress message so we can surface
+  // them in the import preview for debugging.
+  const log: string[] = []
+  const tesseractLogger = (m: { status?: string; progress?: number }): void => {
+    const time = new Date().toISOString().slice(11, 19)
+    const status = m.status ?? '<no-status>'
+    const pct =
+      typeof m.progress === 'number' ? ` ${Math.round(m.progress * 100)}%` : ''
+    const line = `[${time}] ${status}${pct}`
+    log.push(line)
+    console.log('[walleo:tesseract]', m)
+  }
+  // Cache it on window so Import.tsx can surface it even when the
+  // session was never returned (createWorker rejected).
+  if (typeof window !== 'undefined') {
+    ;(window as unknown as { __walleoTesseractLog: string[] }).__walleoTesseractLog = log
+  }
+
   let worker: Awaited<ReturnType<typeof createWorker>>
   try {
+    log.push(`[init] workerPath=${tesseractBase}/worker.min.js`)
+    log.push(`[init] corePath=${tesseractBase}`)
+    log.push(`[init] langPath=${tesseractBase}`)
     worker = await createWorker(['fra', 'eng'], 1, {
       workerPath: `${tesseractBase}/worker.min.js`,
       corePath: tesseractBase,
       langPath: tesseractBase,
       gzip: false,
+      logger: tesseractLogger,
     })
   } catch (err) {
     console.error('[walleo] Tesseract createWorker failed', err)
+    log.push(`[error] ${describeError(err)}`)
     throw new Error(`[tesseract-worker] ${describeError(err)}`)
   }
 
@@ -142,6 +168,7 @@ export async function createOcrSession(): Promise<OcrSession> {
     async terminate() {
       await worker.terminate()
     },
+    log,
   }
 }
 
