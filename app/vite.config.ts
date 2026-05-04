@@ -52,8 +52,32 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff2}'],
+        // Tesseract assets (worker, core wasm, traineddata) are too big
+        // for precache and only needed when the user runs OCR. They go
+        // through runtimeCaching below instead.
+        globIgnores: ['**/tesseract/**'],
         cleanupOutdatedCaches: true,
         navigateFallback: '/index.html',
+        // Defense in depth — if a future feature ever exposes /api/, the
+        // SW must let those requests reach the network instead of
+        // silently returning index.html for 404s.
+        navigateFallbackDenylist: [/^\/api\//, /^\/tesseract\//],
+        // Tesseract assets (~15 MB total) are too big to precache.
+        // Runtime cache them on first OCR use so subsequent uses are
+        // offline-ready.
+        runtimeCaching: [
+          {
+            urlPattern: /^\/tesseract\/.*/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tesseract-assets',
+              expiration: {
+                maxEntries: 20,
+                maxAgeSeconds: 60 * 60 * 24 * 365,
+              },
+            },
+          },
+        ],
       },
       devOptions: {
         enabled: false,
@@ -64,6 +88,12 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+  },
+  // Strip console.* and debugger statements from the production bundle
+  // so OCR rawText / parser snippets / device fingerprints aren't
+  // visible to anyone with DevTools access on a shared device.
+  esbuild: {
+    drop: ['console', 'debugger'],
   },
   server: {
     port: 5173,

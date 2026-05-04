@@ -66,13 +66,48 @@ export interface ImportResult {
   skipped: number
 }
 
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/
+const MAX_BACKUP_CARDS = 10_000
+
+function assertValidBackup(file: unknown): asserts file is BackupFile {
+  if (
+    !file ||
+    typeof file !== 'object' ||
+    (file as BackupFile).app !== 'walleo' ||
+    typeof (file as BackupFile).version !== 'number' ||
+    !Array.isArray((file as BackupFile).cards)
+  ) {
+    throw new Error('Fichier non reconnu (pas un backup Walleo).')
+  }
+  const cards = (file as BackupFile).cards
+  if (cards.length > MAX_BACKUP_CARDS) {
+    throw new Error(
+      `Backup trop volumineux (${cards.length} cartes, max ${MAX_BACKUP_CARDS}).`,
+    )
+  }
+  for (const c of cards) {
+    if (!c || typeof c !== 'object') {
+      throw new Error('Backup invalide : carte mal formée.')
+    }
+    if (typeof c.id !== 'string' || c.id.length === 0) {
+      throw new Error('Backup invalide : id de carte manquant.')
+    }
+    if (c.type !== 'loyalty' && c.type !== 'event') {
+      throw new Error(`Backup invalide : type de carte inconnu (${c.type}).`)
+    }
+    if (typeof c.brandColor !== 'string' || !HEX_COLOR_RE.test(c.brandColor)) {
+      throw new Error(
+        `Backup invalide : brandColor non-hex (${c.brandColor}).`,
+      )
+    }
+  }
+}
+
 export async function importBackup(
   file: BackupFile,
   strategy: 'replace' | 'merge',
 ): Promise<ImportResult> {
-  if (file.app !== 'walleo' || typeof file.version !== 'number') {
-    throw new Error('Fichier non reconnu (pas un backup Walleo).')
-  }
+  assertValidBackup(file)
   if (file.version > BACKUP_VERSION) {
     throw new Error(
       `Backup version ${file.version} non supportée par cette version de l'app.`,
@@ -112,6 +147,13 @@ async function deserializeTicket(s: SerializedTicket): Promise<Ticket> {
 }
 
 async function deserializeBlob(s: SerializedPkpass): Promise<Blob> {
+  // Strict scheme guard — without this, a malicious backup could put
+  // an http(s):// URL in dataUrl and `fetch` would happily make an
+  // outbound request, leaking which device imported the backup and
+  // breaking the "no data leaves the device" rule.
+  if (typeof s.dataUrl !== 'string' || !s.dataUrl.startsWith('data:')) {
+    throw new Error('Backup invalide : URL de pièce jointe non-data:.')
+  }
   const response = await fetch(s.dataUrl)
   const buffer = await response.arrayBuffer()
   return new Blob([buffer], { type: s.type })

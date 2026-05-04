@@ -33,15 +33,15 @@
     X-Frame-Options = "DENY"
     Referrer-Policy = "no-referrer"
     Permissions-Policy = "camera=(self), microphone=(), geolocation=(), wake-lock=(self)"
+    Strict-Transport-Security = "max-age=63072000; includeSubDomains; preload"
+    Cross-Origin-Opener-Policy = "same-origin"
     # CSP notes:
     #   - 'wasm-unsafe-eval' is needed for Tesseract / pdf.js wasm
     #   - 'unsafe-inline' on style-src is required for Tailwind v4 runtime
     #     injected styles
-    #   - cdn.jsdelivr.net hosts Tesseract.js' worker + core (default
-    #     workerPath / corePath); tessdata.projectnaptha.com hosts the
-    #     French + English language packs. TODO: self-host these assets
-    #     in public/tesseract/ to keep the app fully local (Phase 4).
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://tessdata.projectnaptha.com; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    #   - Tesseract assets are now self-hosted in public/tesseract/ — no
+    #     CDN allowlist needed.
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 # ---------------------------------------------------------------------------
 # Service worker & SW registrar — never cached, so updates ship immediately.

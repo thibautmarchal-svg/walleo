@@ -222,6 +222,22 @@ export function CardForm({ mode }: CardFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, existing?.id])
 
+  /** Size guard for any image entering the import pipeline — protects
+   *  against DoS via a 50 MB clipboard paste eating Tesseract memory on
+   *  iPhone. */
+  const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+
+  const isAcceptableImage = (file: File | Blob): boolean => {
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImportStatus({
+        kind: 'error',
+        message: `Image trop volumineuse (${(file.size / 1024 / 1024).toFixed(1)} Mo, max ${MAX_IMAGE_BYTES / 1024 / 1024} Mo).`,
+      })
+      return false
+    }
+    return true
+  }
+
   // ───────────── Loyalty single-image import (existing flow) ─────────────
 
   const tryDecodeForLoyalty = async (blob: File | Blob): Promise<boolean> => {
@@ -244,6 +260,7 @@ export function CardForm({ mode }: CardFormProps) {
   }
 
   const handleLoyaltyFile = async (file: File): Promise<void> => {
+    if (!isAcceptableImage(file)) return
     const ok = await tryDecodeForLoyalty(file)
     if (!ok) {
       const objectUrl = URL.createObjectURL(file)
@@ -258,6 +275,9 @@ export function CardForm({ mode }: CardFormProps) {
 
   const handleTicketFiles = async (files: File[]): Promise<void> => {
     if (files.length === 0) return
+    const accepted = files.filter(isAcceptableImage)
+    if (accepted.length === 0) return
+    files = accepted
 
     // Phase 1: barcode decode (fast)
     const decoded: Array<{ file: File; ticket: Ticket }> = []

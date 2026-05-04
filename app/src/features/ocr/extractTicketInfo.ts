@@ -46,7 +46,15 @@ export interface OcrSession {
 
 export async function createOcrSession(): Promise<OcrSession> {
   const { createWorker, PSM } = await import('tesseract.js')
-  const worker = await createWorker(['fra', 'eng'])
+  // Self-hosted assets — no external CDN. Worker, core wasm and language
+  // packs are all served from /tesseract/ on our own origin (copied into
+  // app/public/tesseract/ at build time).
+  const worker = await createWorker(['fra', 'eng'], 1, {
+    workerPath: '/tesseract/worker.min.js',
+    corePath: '/tesseract',
+    langPath: '/tesseract',
+    gzip: false,
+  })
 
   // PSM 6 = "Assume a single uniform block of text" — the right mode for
   // ticket photos (most of the surface is text, no columns to separate).
