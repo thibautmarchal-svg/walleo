@@ -1,4 +1,7 @@
 # Cloudflare Pages redirects — SPA fallback so React Router can
 # handle deep-link refreshes (e.g. /card/abc123 reloaded).
+# /tesseract/* must keep its real 404 so Tesseract.js can fallback
+# from .traineddata.gz to .traineddata when the .gz is missing.
 # Format: <from> <to> <status>
-/*  /index.html  200
+/tesseract/*  /tesseract/:splat  404!
+/*            /index.html        200
