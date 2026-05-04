@@ -6,10 +6,12 @@
  *   - any attachments embedded in the PDF; .pkpass blobs are flagged so
  *     they can be stored on the resulting card for Wallet re-export.
  *
- * pdfjs-dist needs a Web Worker. Vite + the
- * `new URL('...', import.meta.url)` pattern bundles the worker as a
- * static asset and gives us a stable URL.
+ * Worker loading: we use Vite's `?url` import suffix which bundles
+ * pdfjs's web-worker file as a static asset and returns its public URL.
+ * That's more reliable than `new URL(..., import.meta.url)` which can
+ * fail to resolve correctly when the path lives in node_modules.
  */
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 export interface PdfAttachment {
   filename: string
@@ -28,30 +30,53 @@ export interface PdfParseResult {
 let workerConfigured = false
 
 export async function parsePdfFile(file: File | Blob): Promise<PdfParseResult> {
-  const pdfjsLib = await import('pdfjs-dist')
+  let pdfjsLib: typeof import('pdfjs-dist')
+  try {
+    pdfjsLib = await import('pdfjs-dist')
+  } catch (err) {
+    console.error('[walleo] pdfjs-dist failed to load', err)
+    throw new Error('Le module PDF n\'a pas pu se charger.')
+  }
 
   if (!workerConfigured) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.min.mjs',
-      import.meta.url,
-    ).href
+    pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
     workerConfigured = true
   }
 
-  const arrayBuffer = await file.arrayBuffer()
-  const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
-  const pdf = await loadingTask.promise
+  let pdf: Awaited<
+    ReturnType<typeof pdfjsLib.getDocument>['promise']
+  >
+  try {
+    const arrayBuffer = await file.arrayBuffer()
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+    pdf = await loadingTask.promise
+  } catch (err) {
+    console.error('[walleo] PDF load failed', err)
+    throw new Error(
+      err instanceof Error
+        ? `Le PDF est corrompu ou protégé : ${err.message}`
+        : 'Le PDF est corrompu ou protégé.',
+    )
+  }
+
+  // Capture numPages NOW — accessing it after destroy() can throw on
+  // some pdfjs versions.
+  const numPages = pdf.numPages
 
   // Text extraction
   let text = ''
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    const pageText = content.items
-      .map((it) => ('str' in it ? it.str : ''))
-      .join(' ')
-    text += pageText + '\n\n'
-    page.cleanup()
+  for (let i = 1; i <= numPages; i++) {
+    try {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const pageText = (content.items ?? [])
+        .map((it) => ('str' in it ? it.str : ''))
+        .join(' ')
+      text += pageText + '\n\n'
+      page.cleanup()
+    } catch (err) {
+      console.warn(`[walleo] PDF page ${i} extraction failed`, err)
+    }
   }
 
   // Attachments
@@ -59,28 +84,35 @@ export async function parsePdfFile(file: File | Blob): Promise<PdfParseResult> {
   try {
     const raw = await pdf.getAttachments()
     if (raw && typeof raw === 'object') {
-      attachments = Object.values(raw).map((a) => {
-        const u8 = (a as { content: Uint8Array }).content
-        const filename = (a as { filename: string }).filename
-        const isPkpass = isZipMagic(u8) && /\.pkpass$/i.test(filename)
-        return {
-          filename,
-          blob: new Blob([new Uint8Array(u8)], {
-            type: isPkpass
-              ? 'application/vnd.apple.pkpass'
-              : 'application/octet-stream',
-          }),
-          isPkpass,
-        }
-      })
+      attachments = Object.values(raw)
+        .filter((a): a is { content: Uint8Array; filename: string } =>
+          a !== null &&
+          typeof a === 'object' &&
+          'content' in a &&
+          'filename' in a,
+        )
+        .map((a) => {
+          const u8 = a.content
+          const filename = a.filename
+          const isPkpass = isZipMagic(u8) && /\.pkpass$/i.test(filename)
+          return {
+            filename,
+            blob: new Blob([new Uint8Array(u8)], {
+              type: isPkpass
+                ? 'application/vnd.apple.pkpass'
+                : 'application/octet-stream',
+            }),
+            isPkpass,
+          }
+        })
     }
-  } catch {
-    // Some PDFs error on getAttachments — degrade silently.
+  } catch (err) {
+    console.warn('[walleo] PDF getAttachments failed', err)
   }
 
-  await pdf.destroy()
+  await pdf.destroy().catch(() => {})
 
-  return { text, numPages: pdf.numPages, attachments }
+  return { text, numPages, attachments }
 }
 
 function isZipMagic(u8: Uint8Array): boolean {
