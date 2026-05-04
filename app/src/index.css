@@ -128,10 +128,13 @@ body {
   touch-action: pan-x pan-y;
 }
 
-/* iOS safe-area helpers */
+/* iOS safe-area helpers — use `calc()` so the existing utility padding
+   (e.g. `py-4`) is ADDED to the inset, not replaced. Without this, on
+   Dynamic Island iPhones the header content sticks to the status bar
+   because `padding-top` from .safe-top wins over `py-4`. */
 .safe-top {
-  padding-top: env(safe-area-inset-top);
+  padding-top: calc(0.75rem + env(safe-area-inset-top));
 }
 .safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
 }

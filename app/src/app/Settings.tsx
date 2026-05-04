@@ -16,6 +16,16 @@ import {
   type BackupFile,
 } from '@/shared/db/backup'
 import { db } from '@/shared/db/db'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/shared/ui/alert-dialog'
 
 interface StorageStats {
   cards: number
@@ -28,12 +38,18 @@ type ActionStatus =
   | { kind: 'success'; message: string }
   | { kind: 'error'; message: string }
 
+const RESET_KEYWORD = 'EFFACER'
+
 export function Settings() {
   const navigate = useNavigate()
   const cards = useCardsStore((s) => s.cards)
   const loadAll = useCardsStore((s) => s.loadAll)
   const [stats, setStats] = useState<StorageStats>({ cards: cards.length })
   const [status, setStatus] = useState<ActionStatus>({ kind: 'idle' })
+  /** Pending parsed backup waiting for the user's strategy choice. */
+  const [pendingImport, setPendingImport] = useState<BackupFile | null>(null)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetTyped, setResetTyped] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -65,7 +81,7 @@ export function Settings() {
     } catch (err) {
       setStatus({
         kind: 'error',
-        message: err instanceof Error ? err.message : 'Échec de l\'export.',
+        message: err instanceof Error ? err.message : "Échec de l'export.",
       })
     }
   }
@@ -83,13 +99,23 @@ export function Settings() {
     try {
       const text = await file.text()
       const parsed = JSON.parse(text) as BackupFile
-      const choice = window.prompt(
-        'Tape "remplacer" pour écraser toutes tes cartes locales, ou "fusionner" pour ajouter celles qui ne sont pas déjà présentes.',
-        'fusionner',
-      )
-      if (choice === null) return
-      const strategy =
-        choice.trim().toLowerCase().startsWith('rem') ? 'replace' : 'merge'
+      // Stash for the strategy dialog. Schema validation happens inside
+      // importBackup() after the user picks a strategy.
+      setPendingImport(parsed)
+    } catch (err) {
+      setStatus({
+        kind: 'error',
+        message:
+          err instanceof Error ? err.message : "Fichier JSON invalide.",
+      })
+    }
+  }
+
+  const runImport = async (strategy: 'replace' | 'merge'): Promise<void> => {
+    if (!pendingImport) return
+    const parsed = pendingImport
+    setPendingImport(null)
+    try {
       const result = await importBackup(parsed, strategy)
       await loadAll()
       setStatus({
@@ -105,20 +131,20 @@ export function Settings() {
         message:
           err instanceof Error
             ? err.message
-            : 'Impossible d\'importer ce fichier.',
+            : "Impossible d'importer ce fichier.",
       })
     }
   }
 
-  const onReset = async (): Promise<void> => {
-    const confirmation = window.prompt(
-      'Cette action supprime TOUTES tes cartes localement. Tape "EFFACER" pour confirmer.',
-      '',
-    )
-    if (confirmation !== 'EFFACER') return
+  const confirmReset = async (): Promise<void> => {
+    setResetOpen(false)
+    setResetTyped('')
     await db.cards.clear()
     await loadAll()
-    setStatus({ kind: 'success', message: 'Toutes les cartes ont été supprimées.' })
+    setStatus({
+      kind: 'success',
+      message: 'Toutes les cartes ont été supprimées.',
+    })
   }
 
   return (
@@ -128,7 +154,7 @@ export function Settings() {
           type="button"
           onClick={() => navigate('/')}
           aria-label="Retour"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -193,7 +219,7 @@ export function Settings() {
           </p>
           <button
             type="button"
-            onClick={onReset}
+            onClick={() => setResetOpen(true)}
             className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive active:scale-95"
           >
             <Trash2 className="h-4 w-4" />
@@ -202,7 +228,7 @@ export function Settings() {
         </Section>
 
         {status.kind === 'success' && (
-          <p className="rounded-xl border border-walleo-yellow/40 bg-walleo-yellow/10 px-4 py-3 text-sm text-walleo-yellow">
+          <p className="rounded-xl border border-emerald-400/40 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-400">
             {status.message}
           </p>
         )}
@@ -216,6 +242,83 @@ export function Settings() {
           Walleo · 100 % local · v0.1
         </p>
       </main>
+
+      {/* Strategy picker after parsing an import file */}
+      <AlertDialog
+        open={pendingImport !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingImport(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Importer ce backup</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingImport
+                ? `${pendingImport.cards.length} carte${
+                    pendingImport.cards.length > 1 ? 's' : ''
+                  } détectée${pendingImport.cards.length > 1 ? 's' : ''} dans le fichier. Comment veux-tu l'intégrer ?`
+                : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              variant="outline"
+              onClick={() => void runImport('merge')}
+            >
+              Fusionner
+            </AlertDialogAction>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => void runImport('replace')}
+            >
+              Remplacer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reset confirmation with typed keyword guard */}
+      <AlertDialog
+        open={resetOpen}
+        onOpenChange={(open) => {
+          setResetOpen(open)
+          if (!open) setResetTyped('')
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tout effacer ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Toutes les cartes vont disparaître de cet appareil. Tape{' '}
+              <code className="font-mono font-semibold text-destructive">
+                {RESET_KEYWORD}
+              </code>{' '}
+              pour confirmer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <input
+            type="text"
+            value={resetTyped}
+            onChange={(e) => setResetTyped(e.target.value)}
+            placeholder={RESET_KEYWORD}
+            autoComplete="off"
+            autoCapitalize="characters"
+            className="w-full rounded-xl border border-border bg-secondary px-4 py-3 text-base outline-none focus:border-destructive"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={resetTyped !== RESET_KEYWORD}
+              onClick={() => void confirmReset()}
+            >
+              Tout effacer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

@@ -636,7 +636,7 @@ export function CardForm({ mode }: CardFormProps) {
             type="button"
             onClick={() => navigate(-1)}
             aria-label="Retour"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
@@ -690,7 +690,7 @@ export function CardForm({ mode }: CardFormProps) {
                   type="button"
                   onClick={() => setBrandColor(c)}
                   aria-label={`Couleur ${c}`}
-                  className={`h-9 w-9 rounded-full border-2 transition ${
+                  className={`h-11 w-11 rounded-full border-2 transition ${
                     brandColor === c
                       ? 'border-walleo-yellow'
                       : 'border-transparent'
@@ -931,7 +931,7 @@ function ImportSection({
             }}
           />
           {status.kind === 'success' && (
-            <p className="mt-2 text-xs text-walleo-yellow">{status.message}</p>
+            <p className="mt-2 text-xs text-emerald-400">{status.message}</p>
           )}
           {status.kind === 'error' && (
             <div className="mt-2 space-y-2">
@@ -990,7 +990,7 @@ function TicketEditor({
           onChange={(e) =>
             onChange({ barcodeFormat: e.target.value as BarcodeFormat })
           }
-          className="rounded-lg border border-border bg-background px-2 py-2 text-xs outline-none focus:border-walleo-yellow"
+          className="rounded-lg border border-border bg-background px-2 py-2 text-sm outline-none focus:border-walleo-yellow"
         >
           {BARCODE_FORMATS.map((f) => (
             <option key={f} value={f}>
@@ -1002,20 +1002,20 @@ function TicketEditor({
           value={ticket.holderName ?? ''}
           onChange={(e) => onChange({ holderName: e.target.value })}
           placeholder="Au nom de…"
-          className="rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-walleo-yellow"
+          className="rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-walleo-yellow"
         />
       </div>
       <input
         value={ticket.barcodeValue}
         onChange={(e) => onChange({ barcodeValue: e.target.value })}
         placeholder="Valeur du code"
-        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs outline-none focus:border-walleo-yellow"
+        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none focus:border-walleo-yellow"
       />
       <input
         value={ticket.seat ?? ''}
         onChange={(e) => onChange({ seat: e.target.value })}
         placeholder="Place / siège"
-        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs outline-none focus:border-walleo-yellow"
+        className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-walleo-yellow"
       />
       {ocrRawText !== undefined && (
         <details className="mt-2 group">

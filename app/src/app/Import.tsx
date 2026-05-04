@@ -240,7 +240,7 @@ export function Import() {
           type="button"
           onClick={() => navigate(-1)}
           aria-label="Retour"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -278,7 +278,7 @@ export function Import() {
                 onChange={(e) => setEmailText(e.target.value)}
                 placeholder="Colle ici le texte complet du mail Ticketmaster, FNAC, See Tickets…"
                 rows={10}
-                className="w-full rounded-xl border border-border bg-secondary px-4 py-3 font-mono text-xs outline-none focus:border-walleo-yellow"
+                className="w-full rounded-xl border border-border bg-secondary px-4 py-3 text-sm leading-relaxed outline-none focus:border-walleo-yellow"
               />
             </label>
 

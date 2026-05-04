@@ -6,6 +6,16 @@ import { Barcode } from '@/features/barcode-display/Barcode'
 import { useWakeLock } from '@/lib/hooks/useWakeLock'
 import { exportPkpassToWallet } from '@/features/wallet-reexport/exportPkpass'
 import { getEventTickets, type Ticket } from '@/shared/db/types'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/shared/ui/alert-dialog'
 
 export function CardDetail() {
   const { id } = useParams<{ id: string }>()
@@ -14,6 +24,7 @@ export function CardDetail() {
   const remove = useCardsStore((s) => s.remove)
   const update = useCardsStore((s) => s.update)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   useWakeLock(true)
 
@@ -53,8 +64,8 @@ export function CardDetail() {
         })
       : null
 
-  const onDelete = async (): Promise<void> => {
-    if (!confirm(`Supprimer "${card.name}" ?`)) return
+  const confirmDelete = async (): Promise<void> => {
+    if (!card) return
     await remove(card.id)
     navigate('/')
   }
@@ -76,7 +87,7 @@ export function CardDetail() {
           type="button"
           onClick={() => navigate(-1)}
           aria-label="Retour"
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-walleo-black active:scale-95"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-walleo-black active:scale-95"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -86,20 +97,41 @@ export function CardDetail() {
             type="button"
             onClick={() => navigate(`/card/${card.id}/edit`)}
             aria-label="Modifier"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-walleo-black active:scale-95"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-walleo-black active:scale-95"
           >
             <Pencil className="h-4 w-4" />
           </button>
           <button
             type="button"
-            onClick={onDelete}
+            onClick={() => setDeleteOpen(true)}
             aria-label="Supprimer"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-destructive active:scale-95"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-100 text-destructive active:scale-95"
           >
             <Trash2 className="h-5 w-5" />
           </button>
         </div>
       </header>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer "{card.name}" ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Cette action est irréversible. La carte et son code-barres
+              seront effacés de cet appareil.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => void confirmDelete()}
+            >
+              Supprimer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <main className="flex flex-1 flex-col items-center gap-6 py-8">
         {tickets ? (

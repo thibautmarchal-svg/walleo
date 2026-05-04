@@ -82,7 +82,7 @@ export function Dashboard() {
             <Link
               to="/settings"
               aria-label="Paramètres"
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary text-secondary-foreground transition active:scale-95"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-secondary-foreground transition active:scale-95"
             >
               <SettingsIcon className="h-4 w-4" />
             </Link>
@@ -143,10 +143,18 @@ export function Dashboard() {
                 ? `Aucun résultat pour « ${search.trim()} ».`
                 : 'Aucune carte pour ce filtre.'}
             </p>
-            {!search.trim() && (
+            {search.trim() ? (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="mt-4 rounded-full border border-border bg-secondary px-5 py-2 text-sm font-medium text-foreground transition active:scale-[0.97]"
+              >
+                Effacer la recherche
+              </button>
+            ) : (
               <Link
                 to="/add"
-                className="mt-4 rounded-full bg-walleo-yellow px-5 py-2 text-sm font-semibold text-walleo-black"
+                className="mt-4 rounded-full bg-walleo-yellow px-5 py-2 text-sm font-semibold text-walleo-black transition active:scale-[0.97]"
               >
                 Ajouter une carte
               </Link>

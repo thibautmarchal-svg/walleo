@@ -84,7 +84,10 @@ export function Barcode({ format, value, className }: BarcodeProps) {
 
   return (
     <div className={className}>
-      <canvas ref={canvasRef} className="mx-auto block h-auto max-w-full bg-white" />
+      <canvas
+        ref={canvasRef}
+        className="mx-auto block h-auto w-full max-w-full bg-white"
+      />
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
     </div>
   )
