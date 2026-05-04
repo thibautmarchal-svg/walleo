@@ -38,18 +38,18 @@ function getOptions(format: BarcodeFormat, value: string): BwipOptions | null {
         ...base,
         bcid: 'ean13',
         scale: 3,
-        height: 20,
-        includetext: true,
-        textxalign: 'center',
+        height: 22,
+        // No inline digits — the caller renders the value below for a
+        // cleaner, more readable barcode image.
+        includetext: false,
       }
     case 'CODE128':
       return {
         ...base,
         bcid: 'code128',
         scale: 3,
-        height: 20,
-        includetext: true,
-        textxalign: 'center',
+        height: 22,
+        includetext: false,
       }
     case 'PDF417':
       return { ...base, bcid: 'pdf417', scale: 3, height: 8 }
