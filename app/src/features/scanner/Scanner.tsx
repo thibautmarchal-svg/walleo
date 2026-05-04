@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, X } from 'lucide-react'
+import { Flashlight, FlashlightOff, Loader2, X } from 'lucide-react'
 import type { BarcodeFormat as DomainFormat } from '@/shared/db/types'
+
+type TorchCapableTrack = MediaStreamTrack & {
+  getCapabilities?: () => MediaTrackCapabilities & { torch?: boolean }
+}
 
 const ZXING_TO_DOMAIN: Record<string, Exclude<DomainFormat, 'NONE'>> = {
   QR_CODE: 'QR',
@@ -18,9 +22,26 @@ interface ScannerControls {
 
 export function Scanner() {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const trackRef = useRef<TorchCapableTrack | null>(null)
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  const [torchAvailable, setTorchAvailable] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
+
+  const toggleTorch = async (): Promise<void> => {
+    const track = trackRef.current
+    if (!track) return
+    const next = !torchOn
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: next } as MediaTrackConstraintSet],
+      })
+      setTorchOn(next)
+    } catch (err) {
+      console.warn('[walleo] torch toggle failed', err)
+    }
+  }
 
   useEffect(() => {
     let controls: ScannerControls | null = null
@@ -107,6 +128,25 @@ export function Scanner() {
           return
         }
         setReady(true)
+
+        // Probe the live video track for torch support — only Android
+        // Chromium-based browsers expose it. iOS Safari hides this
+        // capability so the button stays unmounted there.
+        const stream = videoEl.srcObject as MediaStream | null
+        const track = stream?.getVideoTracks()?.[0] as
+          | TorchCapableTrack
+          | undefined
+        if (track) {
+          trackRef.current = track
+          try {
+            const caps = track.getCapabilities?.()
+            if (caps && 'torch' in caps && caps.torch) {
+              setTorchAvailable(true)
+            }
+          } catch {
+            // Some old browsers throw on getCapabilities — ignore
+          }
+        }
       } catch (err) {
         if (cancelled) return
         const name = (err as Error & { name?: string }).name
@@ -129,6 +169,15 @@ export function Scanner() {
     return () => {
       cancelled = true
       controls?.stop()
+      // Best-effort: turn the torch off when leaving the page
+      if (trackRef.current) {
+        trackRef.current
+          .applyConstraints({
+            advanced: [{ torch: false } as MediaTrackConstraintSet],
+          })
+          .catch(() => {})
+        trackRef.current = null
+      }
     }
   }, [navigate])
 
@@ -150,7 +199,27 @@ export function Scanner() {
           <X className="h-5 w-5" />
         </button>
         <h1 className="text-sm font-semibold">Scanner un code</h1>
-        <div className="h-9 w-9" />
+        {torchAvailable ? (
+          <button
+            type="button"
+            onClick={() => void toggleTorch()}
+            aria-label={torchOn ? 'Éteindre la lampe' : 'Allumer la lampe'}
+            aria-pressed={torchOn}
+            className={`flex h-9 w-9 items-center justify-center rounded-full transition active:scale-95 ${
+              torchOn
+                ? 'bg-walleo-yellow text-walleo-black'
+                : 'bg-white/10 text-white'
+            }`}
+          >
+            {torchOn ? (
+              <Flashlight className="h-5 w-5" />
+            ) : (
+              <FlashlightOff className="h-5 w-5" />
+            )}
+          </button>
+        ) : (
+          <div className="h-9 w-9" />
+        )}
       </header>
 
       <div className="relative flex flex-1 items-center justify-center overflow-hidden">
