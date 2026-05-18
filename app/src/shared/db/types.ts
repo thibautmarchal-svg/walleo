@@ -29,6 +29,19 @@ export type CardSource =
   | 'email'
   | 'pdf'
 
+/** A user-attached PDF / image (festival map, paper ticket scan,
+ *  parking voucher…). Stored as a Blob in IndexedDB, never leaves the
+ *  device. */
+export interface Attachment {
+  id: string
+  filename: string
+  mimeType: string
+  /** Size in bytes — duplicated from blob.size for cheap display. */
+  size: number
+  blob: Blob
+  addedAt: number
+}
+
 export interface Ticket {
   id: string
   barcodeFormat: BarcodeFormat
@@ -77,6 +90,9 @@ export interface Card {
   lastWalletExportAt?: number
 
   notes?: string
+
+  /** Free-form user-uploaded files (PDFs, images) attached to the card. */
+  attachments?: Attachment[]
 }
 
 export type NewCardInput = Omit<Card, 'id' | 'createdAt' | 'updatedAt'>

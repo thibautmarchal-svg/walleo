@@ -1,11 +1,15 @@
 import { db } from './db'
-import type { Card, Ticket } from './types'
+import type { Attachment, Card, Ticket } from './types'
 
-const BACKUP_VERSION = 2
+const BACKUP_VERSION = 3
 
 interface SerializedPkpass {
   dataUrl: string
   type: string
+}
+
+interface SerializedAttachment extends Omit<Attachment, 'blob'> {
+  dataUrl: string
 }
 
 interface SerializedTicket extends Omit<Ticket, 'originalPkpassBlob'> {
@@ -13,9 +17,10 @@ interface SerializedTicket extends Omit<Ticket, 'originalPkpassBlob'> {
 }
 
 interface SerializedCard
-  extends Omit<Card, 'originalPkpassBlob' | 'tickets'> {
+  extends Omit<Card, 'originalPkpassBlob' | 'tickets' | 'attachments'> {
   originalPkpassBlob?: SerializedPkpass
   tickets?: SerializedTicket[]
+  attachments?: SerializedAttachment[]
 }
 
 export interface BackupFile {
@@ -37,7 +42,7 @@ export async function exportBackup(): Promise<BackupFile> {
 }
 
 async function serializeCard(c: Card): Promise<SerializedCard> {
-  const { originalPkpassBlob, tickets, ...rest } = c
+  const { originalPkpassBlob, tickets, attachments, ...rest } = c
   const out: SerializedCard = { ...rest }
   if (originalPkpassBlob) {
     out.originalPkpassBlob = await serializeBlob(originalPkpassBlob)
@@ -45,7 +50,17 @@ async function serializeCard(c: Card): Promise<SerializedCard> {
   if (tickets) {
     out.tickets = await Promise.all(tickets.map(serializeTicket))
   }
+  if (attachments && attachments.length > 0) {
+    out.attachments = await Promise.all(attachments.map(serializeAttachment))
+  }
   return out
+}
+
+async function serializeAttachment(
+  a: Attachment,
+): Promise<SerializedAttachment> {
+  const { blob, ...rest } = a
+  return { ...rest, dataUrl: await blobToDataUrl(blob) }
 }
 
 async function serializeTicket(t: Ticket): Promise<SerializedTicket> {
@@ -129,7 +144,7 @@ export async function importBackup(
 }
 
 async function deserializeCard(s: SerializedCard): Promise<Card> {
-  const { originalPkpassBlob, tickets, ...rest } = s
+  const { originalPkpassBlob, tickets, attachments, ...rest } = s
   const out: Card = { ...(rest as Card) }
   if (originalPkpassBlob) {
     out.originalPkpassBlob = await deserializeBlob(originalPkpassBlob)
@@ -137,7 +152,24 @@ async function deserializeCard(s: SerializedCard): Promise<Card> {
   if (tickets) {
     out.tickets = await Promise.all(tickets.map(deserializeTicket))
   }
+  if (attachments && attachments.length > 0) {
+    out.attachments = await Promise.all(
+      attachments.map(deserializeAttachment),
+    )
+  }
   return out
+}
+
+async function deserializeAttachment(
+  s: SerializedAttachment,
+): Promise<Attachment> {
+  const { dataUrl, ...rest } = s
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+    throw new Error('Backup invalide : pièce jointe non-data:.')
+  }
+  const response = await fetch(dataUrl)
+  const buffer = await response.arrayBuffer()
+  return { ...rest, blob: new Blob([buffer], { type: rest.mimeType }) }
 }
 
 async function deserializeTicket(s: SerializedTicket): Promise<Ticket> {

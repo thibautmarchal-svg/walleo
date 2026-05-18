@@ -1,11 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Pencil, Trash2, Wallet as WalletIcon } from 'lucide-react'
+import {
+  ArrowLeft,
+  FileText,
+  ImageIcon,
+  Paperclip,
+  Pencil,
+  Trash2,
+  Wallet as WalletIcon,
+} from 'lucide-react'
 import { useCardsStore } from '@/features/cards/store'
 import { Barcode } from '@/features/barcode-display/Barcode'
 import { useWakeLock } from '@/lib/hooks/useWakeLock'
 import { exportPkpassToWallet } from '@/features/wallet-reexport/exportPkpass'
-import { getEventTickets, type Ticket } from '@/shared/db/types'
+import {
+  getEventTickets,
+  type Attachment,
+  type Ticket,
+} from '@/shared/db/types'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -180,6 +192,19 @@ export function CardDetail() {
               </p>
             </div>
           )}
+          {card.attachments && card.attachments.length > 0 && (
+            <div className="rounded-xl bg-neutral-100 px-4 py-3">
+              <span className="mb-2 flex items-center gap-1.5 text-xs uppercase tracking-wide text-neutral-500">
+                <Paperclip className="h-3 w-3" />
+                Pièces jointes ({card.attachments.length})
+              </span>
+              <div className="space-y-2">
+                {card.attachments.map((a) => (
+                  <AttachmentTile key={a.id} attachment={a} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Loyalty card with original pkpass — rare case but supported */}
@@ -344,6 +369,54 @@ function TicketSwiper({ tickets, onExportPkpass }: TicketSwiperProps) {
         ))}
       </div>
     </div>
+  )
+}
+
+function AttachmentTile({ attachment }: { attachment: Attachment }) {
+  const isImage = attachment.mimeType.startsWith('image/')
+  const sizeLabel =
+    attachment.size > 1024 * 1024
+      ? `${(attachment.size / 1024 / 1024).toFixed(1)} Mo`
+      : `${Math.round(attachment.size / 1024)} Ko`
+
+  const openAttachment = (): void => {
+    const url = URL.createObjectURL(attachment.blob)
+    // Open in a new tab/Safari view. Note: PWA on iOS opens the system
+    // browser; on Mac Safari it opens a new tab. We don't revoke
+    // immediately because the new tab needs the URL to load.
+    const win = window.open(url, '_blank', 'noopener,noreferrer')
+    if (!win) {
+      // Popup blocked or unavailable — fallback to download
+      const a = document.createElement('a')
+      a.href = url
+      a.download = attachment.filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={openAttachment}
+      className="flex w-full items-center gap-3 rounded-lg bg-white p-2 text-left transition active:scale-[0.99]"
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-walleo-yellow/15 text-walleo-yellow">
+        {isImage ? (
+          <ImageIcon className="h-5 w-5" />
+        ) : (
+          <FileText className="h-5 w-5" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-walleo-black">
+          {attachment.filename}
+        </p>
+        <p className="text-[11px] text-neutral-500">{sizeLabel}</p>
+      </div>
+    </button>
   )
 }
 

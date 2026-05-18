@@ -10,8 +10,11 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft,
   Crop,
+  FileText,
+  ImageIcon,
   ImagePlus,
   Loader2,
+  Paperclip,
   Plus,
   Trash2,
   Users,
@@ -28,6 +31,7 @@ import {
   type ExtractedTicketInfo,
 } from '@/features/ocr/extractTicketInfo'
 import type {
+  Attachment,
   BarcodeFormat,
   CardSource,
   CardType,
@@ -177,6 +181,10 @@ export function CardForm({ mode }: CardFormProps) {
   )
   const [notes, setNotes] = useState(existing?.notes ?? '')
   const [tickets, setTickets] = useState<Ticket[]>(initialTickets)
+  const [attachments, setAttachments] = useState<Attachment[]>(
+    existing?.attachments ?? [],
+  )
+  const attachmentInputRef = useRef<HTMLInputElement>(null)
 
   const [submitting, setSubmitting] = useState(false)
   const [importStatus, setImportStatus] = useState<ImportStatus>(
@@ -229,6 +237,7 @@ export function CardForm({ mode }: CardFormProps) {
     setVenue(existing.venue ?? '')
     setOrganizer(existing.organizer ?? '')
     setNotes(existing.notes ?? '')
+    setAttachments(existing.attachments ?? [])
     setTickets(initialTickets)
     setImportSource(existing.source)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -517,6 +526,43 @@ export function CardForm({ mode }: CardFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type])
 
+  // ─────────────────── Attachments management ───────────────────
+
+  /** 20 MB per file. Bigger blobs blow up IndexedDB quotas on Safari
+   *  and freeze the UI when serialised to a data URL for backup. */
+  const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+
+  const onAttachmentPick = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length === 0) return
+    const accepted: Attachment[] = []
+    for (const file of files) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setImportStatus({
+          kind: 'error',
+          message: `${file.name} fait ${(file.size / 1024 / 1024).toFixed(1)} Mo (max ${MAX_ATTACHMENT_BYTES / 1024 / 1024} Mo).`,
+        })
+        continue
+      }
+      accepted.push({
+        id: nanoid(),
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        size: file.size,
+        blob: file,
+        addedAt: Date.now(),
+      })
+    }
+    if (accepted.length > 0) {
+      setAttachments((prev) => [...prev, ...accepted])
+    }
+  }
+
+  const removeAttachment = (id: string): void => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id))
+  }
+
   // ─────────────────── Tickets management ───────────────────
 
   const updateTicket = (id: string, patch: Partial<Ticket>): void => {
@@ -584,6 +630,7 @@ export function CardForm({ mode }: CardFormProps) {
         organizer:
           type === 'event' && organizer.trim() ? organizer.trim() : undefined,
         notes: notes.trim() ? notes.trim() : undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
         tickets:
           cleanTickets && cleanTickets.length > 0 ? cleanTickets : undefined,
       }
@@ -607,6 +654,9 @@ export function CardForm({ mode }: CardFormProps) {
           ...(payload.venue ? { venue: payload.venue } : {}),
           ...(payload.organizer ? { organizer: payload.organizer } : {}),
           ...(payload.notes ? { notes: payload.notes } : {}),
+          ...(payload.attachments
+            ? { attachments: payload.attachments }
+            : {}),
           ...(payload.tickets ? { tickets: payload.tickets } : {}),
         })
         navigate(`/card/${card.id}`, { replace: true })
@@ -880,6 +930,54 @@ export function CardForm({ mode }: CardFormProps) {
             </>
           )}
 
+          {/* Attachments — PDFs / images, stored as Blobs in IndexedDB */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <Paperclip className="h-3.5 w-3.5" />
+                Pièces jointes
+                {attachments.length > 0 && (
+                  <span className="ml-1 rounded-full bg-walleo-yellow/15 px-2 py-0.5 text-[10px] text-walleo-yellow">
+                    {attachments.length}
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="rounded-2xl border border-dashed border-border bg-secondary/40 p-4">
+              <p className="text-xs text-muted-foreground">
+                Joins le PDF du billet, le plan de salle, une photo du
+                bracelet… Tout reste sur ton appareil.
+              </p>
+              <button
+                type="button"
+                onClick={() => attachmentInputRef.current?.click()}
+                className="mt-3 inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-xs font-semibold transition active:scale-95"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                Ajouter un fichier
+              </button>
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                accept="image/*,application/pdf,.pdf"
+                multiple
+                hidden
+                onChange={onAttachmentPick}
+              />
+            </div>
+            {attachments.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {attachments.map((a) => (
+                  <AttachmentRow
+                    key={a.id}
+                    attachment={a}
+                    onRemove={() => removeAttachment(a.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Notes — available on both loyalty and event cards */}
           <Field label="Notes (optionnel)">
             <textarea
@@ -1080,6 +1178,44 @@ function TicketEditor({
           </pre>
         </details>
       )}
+    </div>
+  )
+}
+
+function AttachmentRow({
+  attachment,
+  onRemove,
+}: {
+  attachment: Attachment
+  onRemove: () => void
+}) {
+  const isImage = attachment.mimeType.startsWith('image/')
+  const sizeLabel =
+    attachment.size > 1024 * 1024
+      ? `${(attachment.size / 1024 / 1024).toFixed(1)} Mo`
+      : `${Math.round(attachment.size / 1024)} Ko`
+
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-secondary/30 p-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-walleo-yellow">
+        {isImage ? (
+          <ImageIcon className="h-5 w-5" />
+        ) : (
+          <FileText className="h-5 w-5" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{attachment.filename}</p>
+        <p className="text-[11px] text-muted-foreground">{sizeLabel}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Supprimer ce fichier"
+        className="flex h-8 w-8 items-center justify-center rounded-full text-destructive hover:bg-destructive/10 active:scale-95"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
     </div>
   )
 }
