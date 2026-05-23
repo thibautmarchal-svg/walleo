@@ -167,9 +167,7 @@ async function deserializeAttachment(
   if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
     throw new Error('Backup invalide : pièce jointe non-data:.')
   }
-  const response = await fetch(dataUrl)
-  const buffer = await response.arrayBuffer()
-  return { ...rest, blob: new Blob([buffer], { type: rest.mimeType }) }
+  return { ...rest, blob: dataUrlToBlob(dataUrl, rest.mimeType) }
 }
 
 async function deserializeTicket(s: SerializedTicket): Promise<Ticket> {
@@ -186,9 +184,31 @@ async function deserializeBlob(s: SerializedPkpass): Promise<Blob> {
   if (typeof s.dataUrl !== 'string' || !s.dataUrl.startsWith('data:')) {
     throw new Error('Backup invalide : URL de pièce jointe non-data:.')
   }
-  const response = await fetch(s.dataUrl)
-  const buffer = await response.arrayBuffer()
-  return new Blob([buffer], { type: s.type })
+  return dataUrlToBlob(s.dataUrl, s.type)
+}
+
+// Decode a data: URL without fetch(). Chrome Android refuses fetch() on
+// large data: URLs (PDFs / images can easily reach several MB after
+// base64), and the app's CSP `connect-src 'self'` blocks fetch on the
+// data: scheme entirely. atob → Uint8Array works regardless.
+function dataUrlToBlob(dataUrl: string, fallbackType?: string): Blob {
+  const commaIdx = dataUrl.indexOf(',')
+  if (commaIdx < 0) throw new Error('Backup invalide : data URL malformée.')
+  const header = dataUrl.slice(5, commaIdx)
+  const isBase64 = header.endsWith(';base64')
+  const mimeType =
+    (isBase64 ? header.slice(0, -7) : header) ||
+    fallbackType ||
+    'application/octet-stream'
+  const payload = dataUrl.slice(commaIdx + 1)
+  if (isBase64) {
+    const binary = atob(payload)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return new Blob([bytes], { type: mimeType })
+  }
+  const bytes = new TextEncoder().encode(decodeURIComponent(payload))
+  return new Blob([bytes], { type: mimeType })
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
